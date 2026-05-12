@@ -49,6 +49,8 @@ public final class MatchRunner {
     private final Map<UUID, DuelMatch> matchByPlayer = new HashMap<>();
     @Nullable private DuelMatch arenaInUse;
     private final List<PendingDuel> waiting = new ArrayList<>();
+    /** Player UUIDs that finished a match while dead — when they respawn, teleport here. */
+    private final Map<UUID, Location> postMatchTeleport = new HashMap<>();
 
     public MatchRunner(JavaPlugin plugin, DuelsConfig config, KitRegistry kits) {
         this.plugin = plugin;
@@ -320,11 +322,35 @@ public final class MatchRunner {
         // Detach sidebar (set back to server-wide main scoreboard)
         p.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
 
-        // Restore saved state
+        // Compute destination: lobby if configured, otherwise pre-duel location
+        Location lobby = config.lobby();
+        Location savedLoc = m.savedLocation().get(p.getUniqueId());
+        Location destination = lobby != null ? lobby : savedLoc;
+
+        // If the player is dead (typical loser, or mutual-kill winner), Bukkit silently
+        // drops the teleport. Defer to respawn handling instead.
+        if (p.isDead()) {
+            if (destination != null) postMatchTeleport.put(p.getUniqueId(), destination);
+            // Restore the player's saved inventory/mode in 1 tick — by then they should
+            // have been auto-respawned by the death listener.
+            DuelMatch matchRef = m;
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (!p.isOnline()) return;
+                if (p.isDead()) p.spigot().respawn();
+                restoreSavedLoadout(p, matchRef);
+            }, 6L);
+            return;
+        }
+
+        // Alive — restore immediately.
+        restoreSavedLoadout(p, m);
+        if (destination != null) p.teleport(destination);
+    }
+
+    private void restoreSavedLoadout(Player p, DuelMatch m) {
         ItemStack[] inv = m.savedInventory().get(p.getUniqueId());
         ItemStack[] armor = m.savedArmor().get(p.getUniqueId());
         ItemStack offhand = m.savedOffhand().get(p.getUniqueId());
-        Location loc = m.savedLocation().get(p.getUniqueId());
         GameMode mode = m.savedGameMode().get(p.getUniqueId());
         PlayerInventory pi = p.getInventory();
         pi.clear();
@@ -332,13 +358,15 @@ public final class MatchRunner {
         if (armor != null) pi.setArmorContents(armor);
         if (offhand != null) pi.setItemInOffHand(offhand);
         if (mode != null) p.setGameMode(mode);
-        Location lobby = config.lobby();
-        if (lobby != null) p.teleport(lobby);
-        else if (loc != null) p.teleport(loc);
         p.setHealth(20.0);
         p.setFoodLevel(20);
         for (PotionEffect pe : p.getActivePotionEffects()) p.removePotionEffect(pe.getType());
         p.sendActionBar(Component.empty());
+    }
+
+    /** Called from MatchListener.onRespawn to recover the pending lobby teleport, if any. */
+    public @Nullable Location consumePostMatchTeleport(UUID id) {
+        return postMatchTeleport.remove(id);
     }
 
     public void handleDisconnect(Player p) {
