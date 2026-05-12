@@ -416,6 +416,13 @@ public final class TournamentManager {
         if (a != null) hud.killScore(a, m.killsA(), m.killsB());
         if (b != null) hud.killScore(b, m.killsB(), m.killsA());
 
+        // Per-kill sound: levelup for the killer, soft bass for the victim.
+        Player killerPlayer = Bukkit.getPlayer(opponentId);
+        if (killerPlayer != null) {
+            killerPlayer.playSound(killerPlayer.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.5f);
+        }
+        victim.playSound(victim.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.5f);
+
         int target = active != null ? active.killsToWin() : config.killsToWin();
         // Refresh spectator sidebar if anyone's watching this match.
         if (m.sidebarScoreboard() != null) {

@@ -46,7 +46,7 @@ public final class TourneyCommand implements CommandExecutor, TabCompleter {
             case "start" -> handleStart(sender, rest);
             case "join" -> handleJoin(sender);
             case "leave" -> handleLeave(sender);
-            case "cancel" -> handleCancel(sender);
+            case "cancel", "stop", "end" -> handleCancel(sender);
             case "bracket" -> handleBracket(sender);
             case "spectate", "spec" -> handleSpectate(sender, rest);
             case "stopspectate", "unspec", "unspectate" -> handleStopSpectate(sender);
@@ -189,7 +189,7 @@ public final class TourneyCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§7  begin a tournament; all params optional, default 5-min join + first-to-5");
         sender.sendMessage("§e/tourney join §7— join the active tournament");
         sender.sendMessage("§e/tourney leave §7— leave before it starts");
-        sender.sendMessage("§e/tourney cancel §7— cancel the tournament (admin)");
+        sender.sendMessage("§e/tourney cancel §7(aliases: stop, end) §7— cancel the tournament (admin)");
         sender.sendMessage("§e/tourney bracket §7— view the bracket");
         sender.sendMessage("§e/tourney spectate [player] §7— spectate a match (or open list)");
         sender.sendMessage("§e/tourney stopspectate §7— exit spectator mode");
@@ -201,7 +201,7 @@ public final class TourneyCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
         if (args.length == 1) {
             List<String> opts = new ArrayList<>(Arrays.asList(
-                "start", "join", "leave", "cancel", "bracket",
+                "start", "join", "leave", "cancel", "stop", "bracket",
                 "spectate", "stopspectate", "setup", "reload", "help"));
             return filter(opts, args[0]);
         }
