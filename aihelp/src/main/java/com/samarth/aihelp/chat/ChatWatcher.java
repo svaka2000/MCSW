@@ -47,10 +47,14 @@ public final class ChatWatcher implements Listener {
         }
         if (!matched) return;
 
-        long cooldownMs = plugin.getConfig().getLong("watcher.cooldown-seconds", 180L) * 1000L;
+        long cooldownMs = plugin.getConfig().getLong("watcher.cooldown-seconds", 30L) * 1000L;
         long now = System.currentTimeMillis();
         Long last = lastHintAt.get(p.getUniqueId());
-        if (last != null && now - last < cooldownMs) return;
+        if (last != null && now - last < cooldownMs) {
+            long remainingSec = (cooldownMs - (now - last)) / 1000L + 1L;
+            plugin.getLogger().fine("Watcher cooldown for " + p.getName() + ": " + remainingSec + "s left");
+            return;
+        }
         lastHintAt.put(p.getUniqueId(), now);
 
         UUID id = p.getUniqueId();
