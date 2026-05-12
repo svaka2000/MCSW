@@ -1,7 +1,7 @@
 package com.samarth.tourney.tournament;
 
 import com.samarth.tourney.config.TourneyConfig;
-import com.samarth.tourney.kit.KitService;
+import com.samarth.tourney.kit.KitsBridge;
 import com.samarth.tourney.persistence.StateStore;
 import com.samarth.tourney.spectate.SpectatorService;
 import com.samarth.tourney.ui.Hud;
@@ -50,7 +50,6 @@ public final class TournamentManager {
 
     private final JavaPlugin plugin;
     private final TourneyConfig config;
-    private final KitService kits;
     private final SpectatorService spec;
     private final Hud hud;
     private final StateStore store;
@@ -63,14 +62,31 @@ public final class TournamentManager {
     /** Lobby destination queued for a player who finished a match while dead. Consumed on respawn. */
     private final Map<UUID, Location> postMatchTeleport = new HashMap<>();
 
-    public TournamentManager(JavaPlugin plugin, TourneyConfig config, KitService kits,
+    public TournamentManager(JavaPlugin plugin, TourneyConfig config,
                               SpectatorService spec, Hud hud, StateStore store) {
         this.plugin = plugin;
         this.config = config;
-        this.kits = kits;
         this.spec = spec;
         this.hud = hud;
         this.store = store;
+    }
+
+    /** Equip the active tournament's kit on a player. No-op (with log) if anything is missing. */
+    private void equipKit(Player p) {
+        if (active == null) return;
+        String kitName = active.kitName();
+        if (kitName == null || kitName.isEmpty()) {
+            plugin.getLogger().warning("Tournament has no kit configured");
+            return;
+        }
+        com.samarth.kits.KitService kits = KitsBridge.tryGet();
+        if (kits == null) {
+            plugin.getLogger().warning("PvPTLKits plugin not loaded — cannot equip kit '" + kitName + "'");
+            return;
+        }
+        if (!kits.equip(kitName, p)) {
+            plugin.getLogger().warning("Kit '" + kitName + "' not found in PvPTLKits");
+        }
     }
 
     public @Nullable Tournament active() { return active; }
@@ -86,7 +102,7 @@ public final class TournamentManager {
 
     // ----- public commands -----
 
-    public void startTournament(CommandSender starter, Map<String, Integer> overrides) {
+    public void startTournament(CommandSender starter, String kitName, Map<String, Integer> overrides) {
         if (isActive()) {
             send(starter, "already-running");
             return;
@@ -96,9 +112,22 @@ public final class TournamentManager {
                 "<red>Setup incomplete. Run </red><yellow>/tourney setup</yellow><red> first.</red>"));
             return;
         }
+        // Validate the kit exists in PvPTLKits
+        com.samarth.kits.KitService kits = KitsBridge.tryGet();
+        if (kits == null) {
+            starter.sendMessage(MM.deserialize(config.prefix() +
+                "<red>PvPTLKits plugin not loaded. Install it and run </red><yellow>/kitsave <name></yellow><red> first.</red>"));
+            return;
+        }
+        if (kits.get(kitName) == null) {
+            starter.sendMessage(MM.deserialize(config.prefix() +
+                "<red>Kit '" + kitName + "' doesn't exist. Run </red><yellow>/kitlist</yellow><red> to see available kits.</red>"));
+            return;
+        }
 
         Tournament t = new Tournament();
         t.setState(TournamentState.JOINING);
+        t.setKitName(kitName);
         // Apply per-tournament overrides (clamped to sane ranges), falling back to config defaults.
         t.setJoinWindowSeconds(clamp(overrides.getOrDefault("join", config.joinWindowSeconds()), 10, 3600));
         t.setKillsToWin(clamp(overrides.getOrDefault("rounds", config.killsToWin()), 1, 100));
@@ -110,7 +139,8 @@ public final class TournamentManager {
 
         // Log the effective settings so staff can see what's in play
         starter.sendMessage(prefixed(MM.deserialize(
-            "<gray>Settings — join: <yellow><join>s</yellow>, rounds: <yellow><rounds></yellow>, freeze: <yellow><freeze>s</yellow>, cap: <yellow><cap>s</yellow></gray>",
+            "<gray>Settings — kit: <aqua><kit></aqua>, join: <yellow><join>s</yellow>, rounds: <yellow><rounds></yellow>, freeze: <yellow><freeze>s</yellow>, cap: <yellow><cap>s</yellow></gray>",
+            Placeholder.parsed("kit", kitName),
             Placeholder.parsed("join", String.valueOf(t.joinWindowSeconds())),
             Placeholder.parsed("rounds", String.valueOf(t.killsToWin())),
             Placeholder.parsed("freeze", String.valueOf(t.freezeSeconds())),
@@ -299,7 +329,7 @@ public final class TournamentManager {
         for (PotionEffect pe : p.getActivePotionEffects()) {
             p.removePotionEffect(pe.getType());
         }
-        kits.apply(p);
+        equipKit(p);
     }
 
     private void scheduleFreeze(Match m, boolean initialStart) {
@@ -534,7 +564,7 @@ public final class TournamentManager {
     }
 
     private void postMatchAliveCleanup(Player p, boolean lost) {
-        kits.clear(p);
+        KitsBridge.clearKit(p);
         p.setHealth(20.0);
         p.setFoodLevel(20);
         for (PotionEffect pe : p.getActivePotionEffects()) p.removePotionEffect(pe.getType());
@@ -690,7 +720,7 @@ public final class TournamentManager {
             if (m != null && m.state() != MatchState.ENDED) {
                 Location spawn = p.getUniqueId().equals(m.playerA()) ? m.arena().spawnA() : m.arena().spawnB();
                 p.teleport(spawn);
-                kits.apply(p);
+                equipKit(p);
                 m.setDisconnectedPlayer(null);
                 p.sendMessage(prefixed(MM.deserialize("<green>Reconnected to match.</green>")));
             }

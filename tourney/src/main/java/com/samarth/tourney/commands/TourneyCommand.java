@@ -65,8 +65,15 @@ public final class TourneyCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("§cNo permission.");
             return;
         }
-        Map<String, Integer> overrides = parseOverrides(sender, rest);
-        manager.startTournament(sender, overrides);
+        if (rest.length < 1) {
+            sender.sendMessage("§7Usage: §e/tourney start <kit> [join=N] [rounds=N] [freeze=N] [cap=N]");
+            sender.sendMessage("§7Save a kit first with §e/kitsave <name>§7. List kits with §e/kitlist§7.");
+            return;
+        }
+        String kitName = rest[0];
+        String[] params = Arrays.copyOfRange(rest, 1, rest.length);
+        Map<String, Integer> overrides = parseOverrides(sender, params);
+        manager.startTournament(sender, kitName, overrides);
     }
 
     /** Parse key=value args ("join=120 rounds=3 freeze=5 cap=300"). Warns on unknown keys. */
@@ -185,8 +192,9 @@ public final class TourneyCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage("§6=== Tourney commands ===");
-        sender.sendMessage("§e/tourney start [join=N] [rounds=N] [freeze=N] [cap=N]");
-        sender.sendMessage("§7  begin a tournament; all params optional, default 5-min join + first-to-5");
+        sender.sendMessage("§e/tourney start <kit> [join=N] [rounds=N] [freeze=N] [cap=N]");
+        sender.sendMessage("§7  begin a tournament with the named kit (saved via /kitsave)");
+        sender.sendMessage("§7  optional params: join window, kills to win each match, freeze, time cap");
         sender.sendMessage("§e/tourney join §7— join the active tournament");
         sender.sendMessage("§e/tourney leave §7— leave before it starts");
         sender.sendMessage("§e/tourney cancel §7(aliases: stop, end) §7— cancel the tournament (admin)");
@@ -213,10 +221,19 @@ public final class TourneyCommand implements CommandExecutor, TabCompleter {
             for (Player p : Bukkit.getOnlinePlayers()) names.add(p.getName());
             return filter(names, args[1]);
         }
-        if (args.length >= 2 && args[0].equalsIgnoreCase("start")) {
-            String last = args[args.length - 1];
-            if (!last.contains("=")) {
-                return filter(Arrays.asList("join=", "rounds=", "freeze=", "cap="), last);
+        if (args[0].equalsIgnoreCase("start")) {
+            // /tourney start <kit> [join=N] [rounds=N] [freeze=N] [cap=N]
+            if (args.length == 2) {
+                // First positional arg = kit name. Suggest from PvPTLKits if loaded.
+                com.samarth.kits.KitService kits = com.samarth.tourney.kit.KitsBridge.tryGet();
+                if (kits == null) return Collections.emptyList();
+                return filter(kits.names(), args[1]);
+            }
+            if (args.length >= 3) {
+                String last = args[args.length - 1];
+                if (!last.contains("=")) {
+                    return filter(Arrays.asList("join=", "rounds=", "freeze=", "cap="), last);
+                }
             }
             return Collections.emptyList();
         }

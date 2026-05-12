@@ -25,6 +25,8 @@ public final class Tournament {
     private int killsToWin;
     private int freezeSeconds;
     private int matchTimeCapSeconds;
+    /** Name of the PvPTLKits kit used for this tournament. Required — set in /tourney start. */
+    private String kitName = "";
 
     public int joinWindowSeconds() { return joinWindowSeconds; }
     public void setJoinWindowSeconds(int v) { this.joinWindowSeconds = v; }
@@ -34,6 +36,8 @@ public final class Tournament {
     public void setFreezeSeconds(int v) { this.freezeSeconds = v; }
     public int matchTimeCapSeconds() { return matchTimeCapSeconds; }
     public void setMatchTimeCapSeconds(int v) { this.matchTimeCapSeconds = v; }
+    public String kitName() { return kitName; }
+    public void setKitName(String v) { this.kitName = v == null ? "" : v; }
 
     public UUID id() { return id; }
 
