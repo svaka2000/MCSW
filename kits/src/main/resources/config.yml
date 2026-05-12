@@ -1,0 +1,8 @@
+# =====================================================
+# PvPTLKits configuration
+# =====================================================
+# Kits are populated via /kitsave <name> and saved under `kits.<name>`.
+# Don't edit by hand unless you know what you're doing — Bukkit ItemStack
+# serialization is fragile to manual changes.
+
+kits: {}

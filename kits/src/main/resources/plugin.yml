@@ -1,0 +1,33 @@
+name: PvPTLKits
+version: '${version}'
+main: com.samarth.kits.KitsPlugin
+api-version: '1.21'
+authors: [Samarth, Weilin]
+description: Operator-defined kit registry shared by Tourney + Duels
+
+commands:
+  kitsave:
+    description: Save current inventory as a named kit
+    usage: /kitsave <name>
+  kitlist:
+    description: List all saved kits
+    aliases: [kits]
+  kitdelete:
+    description: Delete a saved kit
+    aliases: [kitremove]
+    usage: /kitdelete <name>
+  kitgive:
+    description: Equip a saved kit on yourself or another player
+    aliases: [kitequip]
+    usage: /kitgive <name> [player]
+  kitreload:
+    description: Reload kits from disk
+    aliases: [kitreloadall]
+
+permissions:
+  pvptlkits.use:
+    description: Equip kits on yourself
+    default: true
+  pvptlkits.admin:
+    description: Save, delete, give kits to others, reload
+    default: op
