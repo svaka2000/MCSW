@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.title.Title;
@@ -23,6 +24,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.scoreboard.Criteria;
+import org.bukkit.scoreboard.DisplaySlot;
+import org.bukkit.scoreboard.Objective;
+import org.bukkit.scoreboard.Score;
+import org.bukkit.scoreboard.Scoreboard;
 import org.jetbrains.annotations.Nullable;
 import java.time.Duration;
 
@@ -95,6 +101,9 @@ public final class MatchRunner {
         Component subB = Component.text("vs " + a.getName());
         a.showTitle(Title.title(prep, subA, Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
         b.showTitle(Title.title(prep, subB, Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
+
+        // Build and attach the per-match sidebar showing server IP and live round score.
+        rebuildSidebar(m);
 
         scheduleFreeze(m, true);
     }
@@ -217,6 +226,13 @@ public final class MatchRunner {
         }
 
         if (roundOver) {
+            // Sound effects: levelup for round winner, low bass for loser
+            Player rw = Bukkit.getPlayer(roundWinner);
+            Player rl = Bukkit.getPlayer(m.opponentOf(roundWinner));
+            if (rw != null) rw.playSound(rw.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+            if (rl != null) rl.playSound(rl.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.5f);
+            // Refresh sidebar with new round score
+            rebuildSidebar(m);
             int needed = m.roundsNeeded();
             if (m.roundsA() >= needed) { endMatch(m, m.playerA()); return; }
             if (m.roundsB() >= needed) { endMatch(m, m.playerB()); return; }
@@ -293,8 +309,16 @@ public final class MatchRunner {
     }
 
     private void finalizePlayer(Player p, boolean won, DuelMatch m) {
-        if (won) p.showTitle(Title.title(MM.deserialize(config.msg("match-victory")), Component.empty()));
-        else p.showTitle(Title.title(MM.deserialize(config.msg("match-defeat")), Component.empty()));
+        if (won) {
+            p.showTitle(Title.title(MM.deserialize(config.msg("match-victory")), Component.empty()));
+            p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+        } else {
+            p.showTitle(Title.title(MM.deserialize(config.msg("match-defeat")), Component.empty()));
+            p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+        }
+
+        // Detach sidebar (set back to server-wide main scoreboard)
+        p.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
 
         // Restore saved state
         ItemStack[] inv = m.savedInventory().get(p.getUniqueId());
@@ -361,6 +385,63 @@ public final class MatchRunner {
                 }
             }, 10L);
         }, 10L);
+    }
+
+    // ----- sidebar scoreboard -----
+
+    /** Build/refresh the duel sidebar (server IP + live round score) and attach to both fighters. */
+    private void rebuildSidebar(DuelMatch m) {
+        Scoreboard sb = m.sidebarScoreboard();
+        boolean firstBuild = false;
+        if (sb == null) {
+            sb = Bukkit.getScoreboardManager().getNewScoreboard();
+            sb.registerNewObjective("pvptl_duel", Criteria.DUMMY,
+                Component.text("PvPTL Duels").color(NamedTextColor.GOLD));
+            m.setSidebarScoreboard(sb);
+            firstBuild = true;
+        }
+        Objective obj = sb.getObjective("pvptl_duel");
+        if (obj == null) return;
+        if (firstBuild) {
+            obj.setDisplaySlot(DisplaySlot.SIDEBAR);
+            // Hide the score numbers next to each line (Paper 1.20.4+).
+            try {
+                obj.numberFormat(io.papermc.paper.scoreboard.numbers.NumberFormat.blank());
+            } catch (Throwable ignored) {
+                // Older Paper — numbers will be visible; acceptable.
+            }
+        }
+        for (String entry : new ArrayList<>(sb.getEntries())) {
+            sb.resetScores(entry);
+        }
+
+        String aName = nameOf(m.playerA());
+        String bName = nameOf(m.playerB());
+        int needed = m.roundsNeeded();
+        String ip = config.serverIp();
+
+        // Score numbers determine vertical order (higher score = top).
+        setLine(obj, "§7Server", 7);
+        setLine(obj, "§b" + ip, 6);
+        setLine(obj, "§r", 5);
+        setLine(obj, "§b" + truncate(aName, 14) + " §8: §f" + m.roundsA(), 4);
+        setLine(obj, "§c" + truncate(bName, 14) + " §8: §f" + m.roundsB(), 3);
+        setLine(obj, "§l", 2);
+        setLine(obj, "§7First to §f" + needed, 1);
+
+        Player a = Bukkit.getPlayer(m.playerA());
+        Player b = Bukkit.getPlayer(m.playerB());
+        if (a != null) a.setScoreboard(sb);
+        if (b != null) b.setScoreboard(sb);
+    }
+
+    private static void setLine(Objective obj, String entry, int scoreValue) {
+        Score s = obj.getScore(entry);
+        s.setScore(scoreValue);
+    }
+
+    private static String truncate(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max);
     }
 
     // ----- helpers -----
