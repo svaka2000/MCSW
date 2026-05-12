@@ -1,0 +1,47 @@
+# =====================================================
+# Tourney plugin configuration
+# All durations in seconds unless stated otherwise.
+# =====================================================
+
+tournament:
+  # How long the join window stays open after /tourney start
+  join-window-seconds: 300        # 5 minutes
+  # Minimum players required to actually start (if fewer, tournament is cancelled)
+  min-players: 2
+  # Maximum players allowed to join
+  max-players: 64
+  # Hard cap per match — if neither player hits 5 kills in this time, higher kills wins
+  match-time-cap-seconds: 300     # 5 minutes
+  # First to this many kills wins the match
+  kills-to-win: 5
+  # Pre-fight freeze (player held still, immortal, with countdown title)
+  freeze-seconds: 5
+  # Grace period after a quit before auto-forfeit
+  disconnect-grace-seconds: 60
+
+# Set with /tourney setup commands — do not edit by hand unless you know what you are doing.
+locations:
+  lobby: null                     # set with /tourney setup lobby
+  arenas: {}                      # set with /tourney setup arena <name> <a|b>
+
+messages:
+  prefix: "<gray>[<gold>Tourney</gold>]</gray> "
+  join-broadcast: "<gold>A tournament is starting! </gold><click:run_command:'/tourney join'><hover:show_text:'Click to join'><green><bold>[CLICK TO JOIN]</bold></green></hover></click> <gray>(closes in <yellow><time></yellow>)</gray>"
+  joined: "<green>You joined the tournament. </green><gray>(<count> players)</gray>"
+  left: "<yellow>You left the tournament.</yellow>"
+  not-enough-players: "<red>Not enough players joined. Tournament cancelled.</red>"
+  bracket-built: "<green>Bracket built with <count> players. Round 1 starts now!</green>"
+  match-prep-title: "<yellow>PREPARE</yellow>"
+  match-prep-subtitle: "<gray>vs <opponent></gray>"
+  match-fight-title: "<red><bold>FIGHT!</bold></red>"
+  match-win-title: "<green><bold>VICTORY</bold></green>"
+  match-loss-title: "<red><bold>DEFEAT</bold></red>"
+  kill-actionbar: "<aqua>You: <yellow><you></yellow></aqua>  <dark_gray>|</dark_gray>  <red>Opp: <yellow><opp></yellow></red>"
+  tournament-winner-broadcast: "<gold><bold><winner> wins the tournament!</bold></gold>"
+  match-result-broadcast: "<green><winner></green> <gray>defeated</gray> <red><loser></red> <yellow><wscore>-<lscore></yellow>"
+  countdown-bossbar: "<gold>Tournament starts in <yellow><time></yellow> — <green><count></green> joined</gold>"
+  spectator-mode: "<gray>You are now spectating <aqua><target></aqua>.</gray>"
+  cannot-spectate: "<red>That player is not in an active match.</red>"
+  no-active-tournament: "<red>No active tournament.</red>"
+  already-running: "<red>A tournament is already running.</red>"
+  forfeit: "<red><player> forfeited (disconnected).</red>"

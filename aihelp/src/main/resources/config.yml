@@ -1,0 +1,53 @@
+# =====================================================
+# PvPTL AI Help configuration
+# =====================================================
+# IMPORTANT: Do NOT commit your API key to git. Use /aihelp setkey <key> in-game
+# to set it without leaving it in the file.
+
+groq:
+  # GitHub's secret scanner blocks pushing any key in source. Set this at runtime
+  # with /aihelp setkey <key> as an op — it persists to plugins/AIHelp/config.yml on
+  # the server only. The repo-checked-in file stays empty.
+  api-key: ""
+  # See https://console.groq.com/docs/models for current model list.
+  model: "llama-3.3-70b-versatile"
+  # Network timeout in seconds for a single request.
+  timeout-seconds: 20
+  # Max characters per AI reply (keeps responses chat-friendly).
+  max-reply-chars: 400
+
+server:
+  # Server name, used in the system prompt so the NPC knows where it is.
+  name: "PvPTL"
+  # Short description of the server (handed to the NPC as context).
+  description: "A competitive Minecraft PvP server featuring automatic tournaments and 1v1 duels."
+
+memory:
+  # Number of past message pairs (user + assistant) to include in each request.
+  history-pairs: 4
+  # Persist memory across server restarts to disk under plugins/AIHelp/memory/
+  persist: true
+
+watcher:
+  # If enabled, the plugin reads chat for "confused player" cues and offers help unprompted.
+  # OFF by default — turn on with /aihelp reload after editing this.
+  enabled: false
+  # Minimum seconds between unprompted hints to the same player.
+  cooldown-seconds: 180
+  # Keywords that suggest someone needs help.
+  keywords:
+    - "how do i"
+    - "how do you"
+    - "where is"
+    - "where can i"
+    - "what is"
+    - "im stuck"
+    - "i'm stuck"
+    - "halp"
+    - "anyone know"
+
+messages:
+  prefix: "§7[§bAI§7] §f"
+  no-key: "§cAI help is offline — operator hasn't set the Groq API key yet. Run /aihelp setkey <key>."
+  thinking: "§7Thinking…"
+  error: "§cAI request failed: <reason>"

@@ -1,0 +1,23 @@
+name: AIHelp
+version: '${version}'
+main: com.samarth.aihelp.AIHelpPlugin
+api-version: '1.21'
+authors: [Samarth, Weilin]
+description: PvPTL AI help NPC — Groq-powered, in-character, per-player memory
+softdepend: [Citizens]
+
+commands:
+  ask:
+    description: Ask the AI help NPC a question
+    usage: /ask <question>
+  aihelp:
+    description: AI help admin commands (setkey, status, reset)
+    usage: /aihelp <setkey|status|reset|reload> [args]
+
+permissions:
+  aihelp.use:
+    description: Ask the AI help NPC questions
+    default: true
+  aihelp.admin:
+    description: Set API key, reload config
+    default: op

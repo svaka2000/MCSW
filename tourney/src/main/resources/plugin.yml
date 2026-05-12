@@ -1,0 +1,26 @@
+name: Tourney
+version: '${version}'
+main: com.samarth.tourney.TourneyPlugin
+api-version: '1.21'
+authors: [Samarth]
+description: Automatic 1v1 tournament plugin (first-to-5-kills bracket)
+
+commands:
+  tourney:
+    description: Tournament command
+    aliases: [tournament, tour]
+    usage: /tourney <start|join|leave|cancel|bracket|spectate|setup>
+
+permissions:
+  tourney.use:
+    description: Allows joining/leaving and viewing tournaments
+    default: true
+  tourney.start:
+    description: Allows starting a tournament
+    default: op
+  tourney.cancel:
+    description: Allows cancelling a tournament
+    default: op
+  tourney.setup:
+    description: Allows configuring arenas and lobby
+    default: op

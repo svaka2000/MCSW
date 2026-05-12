@@ -1,0 +1,87 @@
+name: Deploy to Minecraft server
+
+# This workflow uploads built JARs to your Minecraft server's plugins/ folder
+# and (optionally) hot-reloads the plugins via PlugManX.
+#
+# REQUIRED REPOSITORY SECRETS (Settings → Secrets and variables → Actions):
+#   MC_SERVER_HOST   — server hostname or IP (e.g. 1.2.3.4)
+#   MC_SERVER_USER   — SSH username with write access to plugins/
+#   MC_SERVER_SSH_KEY — private SSH key (BEGIN/END OPENSSH PRIVATE KEY)
+#   MC_SERVER_PORT   — optional, defaults to 22
+#   MC_PLUGINS_PATH  — absolute path to plugins folder (e.g. /home/mc/server/plugins)
+#
+# OPTIONAL — for hot reload without a full server restart:
+#   MC_SCREEN_NAME   — the GNU screen session name running the server
+#                      (script runs `plugman reload <Plugin>` via screen)
+#
+# Trigger: every push to main (after Build workflow succeeds).
+#
+# Plugin configs (plugins/<Name>/config.yml) are NOT touched — only JARs are replaced.
+
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Build JARs
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build --no-daemon
+          mkdir -p dist
+          cp tourney/build/libs/Tourney-*.jar dist/Tourney.jar
+          cp duels/build/libs/Duels-*.jar dist/Duels.jar
+          cp aihelp/build/libs/AIHelp-*.jar dist/AIHelp.jar
+
+      - name: Check deploy secrets are configured
+        id: check
+        run: |
+          if [ -z "${{ secrets.MC_SERVER_HOST }}" ] || [ -z "${{ secrets.MC_SERVER_USER }}" ] \
+             || [ -z "${{ secrets.MC_SERVER_SSH_KEY }}" ] || [ -z "${{ secrets.MC_PLUGINS_PATH }}" ]; then
+            echo "::warning::Deploy secrets not set; skipping server upload. See deploy.yml for required secret names."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload JARs to server
+        if: steps.check.outputs.skip == 'false'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.MC_SERVER_HOST }}
+          username: ${{ secrets.MC_SERVER_USER }}
+          key: ${{ secrets.MC_SERVER_SSH_KEY }}
+          port: ${{ secrets.MC_SERVER_PORT || 22 }}
+          source: "dist/*.jar"
+          target: ${{ secrets.MC_PLUGINS_PATH }}
+          strip_components: 1
+          overwrite: true
+
+      - name: Hot-reload plugins via PlugManX
+        if: steps.check.outputs.skip == 'false' && env.SCREEN != ''
+        env:
+          SCREEN: ${{ secrets.MC_SCREEN_NAME }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.MC_SERVER_HOST }}
+          username: ${{ secrets.MC_SERVER_USER }}
+          key: ${{ secrets.MC_SERVER_SSH_KEY }}
+          port: ${{ secrets.MC_SERVER_PORT || 22 }}
+          script: |
+            screen -S ${{ secrets.MC_SCREEN_NAME }} -p 0 -X stuff "plugman reload Tourney^M"
+            screen -S ${{ secrets.MC_SCREEN_NAME }} -p 0 -X stuff "plugman reload Duels^M"
+            screen -S ${{ secrets.MC_SCREEN_NAME }} -p 0 -X stuff "plugman reload AIHelp^M"

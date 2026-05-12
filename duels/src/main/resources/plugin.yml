@@ -1,0 +1,26 @@
+name: Duels
+version: '${version}'
+main: com.samarth.duels.DuelsPlugin
+api-version: '1.21'
+authors: [Samarth, Weilin]
+description: PvPTL Duels — 1v1 duels with queues, parties, custom kits
+
+commands:
+  duels:
+    description: Main duels command
+    usage: /duels <queue|leave|accept|deny|gui|info|setlobby|setarena|tagentity|untagentity|help>
+  duel:
+    description: Challenge a player to a duel
+    usage: /duel <player> [kit]
+  duelkit:
+    description: Manage duel kits (operators)
+    aliases: [dkit]
+    usage: /duelkit <save|list|delete|give|reload> [name]
+
+permissions:
+  duels.use:
+    description: Queue, duel, view stats
+    default: true
+  duels.admin:
+    description: Manage kits, arenas, NPC tags
+    default: op

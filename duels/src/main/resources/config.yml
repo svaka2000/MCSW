@@ -1,0 +1,50 @@
+# =====================================================
+# PvPTL Duels configuration
+# =====================================================
+# Run /duelkit save <name> with the kit on to register kits.
+# Run /duels setlobby and /duels setarena <a|b> to wire up locations.
+# Run /duels tagentity (while looking at a mob/armor stand/etc.) so right-clicking
+# it opens the queue GUI.
+
+duels:
+  # First to this many kills wins each "round" (set to 1 for instakill duels)
+  kills-per-round: 1
+  # How many rounds to win the match overall (best of N — must be odd: 1, 3, 5, 7…)
+  default-best-of: 1
+  # Pre-fight freeze countdown seconds
+  freeze-seconds: 3
+  # Match time cap in seconds (auto-finishes; higher score wins)
+  match-time-cap-seconds: 180
+  # How long /duel challenges stay pending before expiring
+  challenge-timeout-seconds: 30
+  # Cooldown between consecutive /duel challenges from the same player
+  challenge-cooldown-seconds: 5
+  # Default kit to queue for if /duels queue is run without an arg
+  default-kit: ""
+
+server:
+  # Shown on the in-match scoreboard sidebar so players see where they are.
+  ip: "pvptl.com"
+
+locations:
+  lobby: null
+  arena:
+    a: null
+    b: null
+
+# Kits are populated by /duelkit save.
+kits: {}
+
+messages:
+  prefix: "<gray>[<aqua>Duels</aqua>]</gray> "
+  no-lobby: "<red>Duels lobby not set. Run /duels setlobby first.</red>"
+  no-arena: "<red>Duels arena not set. Run /duels setarena a and /duels setarena b first.</red>"
+  no-kits: "<red>No kits saved. Use /duelkit save <name> while wearing the loadout.</red>"
+  queued: "<green>You joined the queue for kit <yellow><kit></yellow>. (<count> waiting)</green>"
+  match-found: "<gold>Match found! Teleporting…</gold>"
+  match-prep: "<yellow>PREPARE</yellow>"
+  match-fight: "<red><bold>FIGHT!</bold></red>"
+  match-victory: "<green><bold>VICTORY</bold></green>"
+  match-defeat: "<red><bold>DEFEAT</bold></red>"
+  match-result-broadcast: "<aqua><winner></aqua> <gray>defeated</gray> <yellow><loser></yellow> <gray>(</gray><gold><wscore>-<lscore></gold><gray>)</gray>"
+  kill-actionbar: "<aqua>You: <yellow><you></yellow></aqua>  <dark_gray>|</dark_gray>  <red>Opp: <yellow><opp></yellow></red>"
