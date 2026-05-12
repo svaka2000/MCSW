@@ -31,7 +31,7 @@ public final class DuelsPlugin extends JavaPlugin {
         kits.loadAll();
 
         this.matches = new MatchRunner(this, config, kits);
-        this.queues = new QueueService(config, kits, matches);
+        this.queues = new QueueService(this, config, kits, matches);
         this.challenges = new ChallengeService(this, config, kits, matches);
 
         bind("duels", new DuelsCommand(this));

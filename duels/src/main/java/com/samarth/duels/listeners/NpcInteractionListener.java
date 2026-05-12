@@ -15,12 +15,15 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 
 /**
  * One listener handling all duel-related entity right-clicks and inventory GUI clicks.
@@ -52,6 +55,23 @@ public final class NpcInteractionListener implements Listener {
         if (!target.getScoreboardTags().contains(QUEUE_NPC_TAG)) return;
         e.setCancelled(true);
         QueueGui.open(e.getPlayer(), kits, queues);
+    }
+
+    /**
+     * Right-clicking the tagged leave-queue barrier (anywhere in the player's inventory)
+     * dequeues the player. The barrier is given to queued players in their hotbar.
+     */
+    @EventHandler
+    public void onInteractItem(PlayerInteractEvent e) {
+        Action a = e.getAction();
+        if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) return;
+        ItemStack item = e.getItem();
+        if (item == null || item.getType() != Material.BARRIER) return;
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) return;
+        if (!meta.getPersistentDataContainer().has(queues.leaveQueueKey(), PersistentDataType.BYTE)) return;
+        e.setCancelled(true);
+        queues.dequeue(e.getPlayer(), true);
     }
 
     @EventHandler
