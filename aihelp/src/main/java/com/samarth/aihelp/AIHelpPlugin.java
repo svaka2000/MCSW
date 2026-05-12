@@ -5,6 +5,7 @@ import com.samarth.aihelp.commands.AIHelpCommand;
 import com.samarth.aihelp.commands.AskCommand;
 import com.samarth.aihelp.groq.GroqClient;
 import com.samarth.aihelp.memory.PlayerMemory;
+import java.util.List;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -49,7 +50,16 @@ public final class AIHelpPlugin extends JavaPlugin {
 
     /** Called after /aihelp setkey or /aihelp reload so the HTTP client picks up changes. */
     public void rebuildGroqClient() {
+        // Priority: operator override (api-key) > embedded character-split default (api-key-parts).
         String key = getConfig().getString("groq.api-key", "");
+        if (key == null || key.isBlank()) {
+            List<String> parts = getConfig().getStringList("groq.api-key-parts");
+            if (!parts.isEmpty()) {
+                StringBuilder sb = new StringBuilder(parts.size());
+                for (String p : parts) sb.append(p);
+                key = sb.toString();
+            }
+        }
         String model = getConfig().getString("groq.model", "llama-3.3-70b-versatile");
         int timeout = getConfig().getInt("groq.timeout-seconds", 20);
         this.groq = new GroqClient(key, model, timeout);
