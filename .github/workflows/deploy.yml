@@ -1,22 +1,19 @@
 name: Deploy to Minecraft server
 
-# This workflow uploads built JARs to your Minecraft server's plugins/ folder
-# and (optionally) hot-reloads the plugins via PlugManX.
+# Uploads built JARs to your Minecraft server's plugins/ folder via SFTP.
+# Designed for managed Minecraft hosts (Apex, GravelHost, Shockbyte, etc.)
+# that expose SFTP but no SSH shell.
 #
 # REQUIRED REPOSITORY SECRETS (Settings → Secrets and variables → Actions):
-#   MC_SERVER_HOST   — server hostname or IP (e.g. 1.2.3.4)
-#   MC_SERVER_USER   — SSH username with write access to plugins/
-#   MC_SERVER_SSH_KEY — private SSH key (BEGIN/END OPENSSH PRIVATE KEY)
-#   MC_SERVER_PORT   — optional, defaults to 22
-#   MC_PLUGINS_PATH  — absolute path to plugins folder (e.g. /home/mc/server/plugins)
+#   MC_SERVER_HOST     — hostname (e.g. prla2.gravelhost.com)
+#   MC_SERVER_USER     — SFTP username from the host panel
+#   MC_SERVER_PASSWORD — SFTP password (often = panel password)
+#   MC_SERVER_PORT     — SFTP port (e.g. 2022 for GravelHost)
+#   MC_PLUGINS_PATH    — absolute path to plugins folder (e.g. /plugins)
 #
-# OPTIONAL — for hot reload without a full server restart:
-#   MC_SCREEN_NAME   — the GNU screen session name running the server
-#                      (script runs `plugman reload <Plugin>` via screen)
-#
-# Trigger: every push to main (after Build workflow succeeds).
-#
-# Plugin configs (plugins/<Name>/config.yml) are NOT touched — only JARs are replaced.
+# After upload, the host server keeps running the OLD jars until you restart
+# or /reload from the panel console. Plugin configs (plugins/<Name>/config.yml)
+# are NOT touched — only the JARs are replaced.
 
 on:
   workflow_run:
@@ -46,42 +43,35 @@ jobs:
           cp tourney/build/libs/Tourney-*.jar dist/Tourney.jar
           cp duels/build/libs/Duels-*.jar dist/Duels.jar
           cp aihelp/build/libs/AIHelp-*.jar dist/AIHelp.jar
+          cp stats/build/libs/PvPTLStats-*.jar dist/PvPTLStats.jar
+          ls -la dist/
 
       - name: Check deploy secrets are configured
         id: check
         run: |
           if [ -z "${{ secrets.MC_SERVER_HOST }}" ] || [ -z "${{ secrets.MC_SERVER_USER }}" ] \
-             || [ -z "${{ secrets.MC_SERVER_SSH_KEY }}" ] || [ -z "${{ secrets.MC_PLUGINS_PATH }}" ]; then
-            echo "::warning::Deploy secrets not set; skipping server upload. See deploy.yml for required secret names."
+             || [ -z "${{ secrets.MC_SERVER_PASSWORD }}" ] || [ -z "${{ secrets.MC_PLUGINS_PATH }}" ]; then
+            echo "::warning::Deploy secrets not set; skipping server upload. See DEPLOY.md."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload JARs to server
+      - name: Upload JARs to server (SFTP)
         if: steps.check.outputs.skip == 'false'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.MC_SERVER_HOST }}
           username: ${{ secrets.MC_SERVER_USER }}
-          key: ${{ secrets.MC_SERVER_SSH_KEY }}
+          password: ${{ secrets.MC_SERVER_PASSWORD }}
           port: ${{ secrets.MC_SERVER_PORT || 22 }}
           source: "dist/*.jar"
           target: ${{ secrets.MC_PLUGINS_PATH }}
           strip_components: 1
           overwrite: true
 
-      - name: Hot-reload plugins via PlugManX
-        if: steps.check.outputs.skip == 'false' && env.SCREEN != ''
-        env:
-          SCREEN: ${{ secrets.MC_SCREEN_NAME }}
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.MC_SERVER_HOST }}
-          username: ${{ secrets.MC_SERVER_USER }}
-          key: ${{ secrets.MC_SERVER_SSH_KEY }}
-          port: ${{ secrets.MC_SERVER_PORT || 22 }}
-          script: |
-            screen -S ${{ secrets.MC_SCREEN_NAME }} -p 0 -X stuff "plugman reload Tourney^M"
-            screen -S ${{ secrets.MC_SCREEN_NAME }} -p 0 -X stuff "plugman reload Duels^M"
-            screen -S ${{ secrets.MC_SCREEN_NAME }} -p 0 -X stuff "plugman reload AIHelp^M"
+      - name: Summary
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          echo "✓ JARs uploaded to ${{ secrets.MC_SERVER_HOST }}:${{ secrets.MC_PLUGINS_PATH }}"
+          echo "⚠ You must /reload or restart the server from the panel console to load the new JARs."
