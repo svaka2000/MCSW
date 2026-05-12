@@ -275,10 +275,17 @@ public final class TournamentManager {
         hud.prepTitle(a, b.getName());
         hud.prepTitle(b, a.getName());
 
+        // Refresh entity tracker right after the teleport — gives clients the freeze
+        // countdown to settle on accurate opponent positions before swings start.
+        refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
+
         scheduleFreeze(m, true);
     }
 
     private void prepareFighter(Player p, Location spawn) {
+        if (spawn.getWorld() != null) {
+            try { spawn.getChunk(); } catch (Throwable ignored) {}
+        }
         p.teleport(spawn);
         p.setGameMode(GameMode.SURVIVAL);
         p.setHealth(20.0);
@@ -321,9 +328,6 @@ public final class TournamentManager {
                         scheduleMatchTimer(m);
                         scheduleActionBarRefresh(m);
                     }
-                    // Force entity tracker refresh right before fighting begins — fixes
-                    // mid-match player-pos desync (swing-at-air bug) when chunks just loaded.
-                    refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
                     cancel();
                     return;
                 }

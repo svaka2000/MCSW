@@ -107,6 +107,12 @@ public final class MatchRunner {
         // Build and attach the per-match sidebar showing server IP and live round score.
         rebuildSidebar(m);
 
+        // Refresh entity tracking right after teleport — gives clients the freeze
+        // countdown duration to settle on accurate positions before fighting starts.
+        // Done HERE (start of freeze) instead of at PREP→FIGHTING so the brief
+        // hide/show window doesn't overlap with combat.
+        refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
+
         scheduleFreeze(m, true);
     }
 
@@ -121,6 +127,10 @@ public final class MatchRunner {
     }
 
     private void prepareFighter(Player p, Kit kit, Location spawn) {
+        // Pre-load the destination chunk so the teleport lands in a fully synced area.
+        if (spawn.getWorld() != null) {
+            try { spawn.getChunk(); } catch (Throwable ignored) {}
+        }
         p.teleport(spawn);
         p.setGameMode(GameMode.SURVIVAL);
         p.setHealth(20.0);
@@ -149,10 +159,6 @@ public final class MatchRunner {
                         scheduleMatchTimer(m);
                         scheduleActionBarRefresh(m);
                     }
-                    // Force entity tracker refresh right before fighting begins — fixes
-                    // mid-match player-pos desync (swing-at-air bug) caused by chunks
-                    // just having loaded after the teleport.
-                    refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
                     cancel();
                     return;
                 }
@@ -271,6 +277,8 @@ public final class MatchRunner {
         Component prep = MM.deserialize(config.msg("match-prep"));
         a.showTitle(Title.title(prep, Component.text("Next round…"), Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
         b.showTitle(Title.title(prep, Component.text("Next round…"), Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
+        // Refresh tracking after the round-reset teleport too.
+        refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
         scheduleFreeze(m, false);
     }
 
