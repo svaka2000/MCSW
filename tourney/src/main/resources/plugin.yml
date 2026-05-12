@@ -4,6 +4,7 @@ main: com.samarth.tourney.TourneyPlugin
 api-version: '1.21'
 authors: [Samarth]
 description: Automatic 1v1 tournament plugin (first-to-5-kills bracket)
+softdepend: [PvPTLStats]
 
 commands:
   tourney:

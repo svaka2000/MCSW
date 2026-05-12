@@ -15,6 +15,9 @@ java {
 
 dependencies {
     paperweight.paperDevBundle("1.21.1-R0.1-SNAPSHOT")
+    // Soft-dependency: compile against the StatsService API, but the runtime
+    // class comes from the PvPTLStats plugin loaded at server startup.
+    compileOnly(project(":stats"))
 }
 
 tasks {

@@ -24,6 +24,7 @@ public final class DuelMatch {
     private int killsB;
     private int roundsA;
     private int roundsB;
+    private long startMillis; // wall-clock when the first round began (for stats duration)
 
     @Nullable private BukkitTask freezeTask;
     @Nullable private BukkitTask timerTask;
@@ -68,6 +69,9 @@ public final class DuelMatch {
     public int roundsB() { return roundsB; }
     public void incrementRoundsA() { roundsA++; }
     public void incrementRoundsB() { roundsB++; }
+
+    public long startMillisOrZero() { return startMillis; }
+    public void markStartedNow() { if (startMillis == 0) startMillis = System.currentTimeMillis(); }
 
     public @Nullable BukkitTask freezeTask() { return freezeTask; }
     public void setFreezeTask(@Nullable BukkitTask freezeTask) { this.freezeTask = freezeTask; }

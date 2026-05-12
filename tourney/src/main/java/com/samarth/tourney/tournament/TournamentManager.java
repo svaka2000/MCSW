@@ -519,7 +519,32 @@ public final class TournamentManager {
                 hud.winTitle(w);
             }
         }
+        // Persist tournament-wide stats (if PvPTLStats is loaded). One row per participant,
+        // with rounds_won counting how many bracket rounds they won (champion = totalRounds).
+        recordTournamentStats();
         teardown(false);
+    }
+
+    private void recordTournamentStats() {
+        com.samarth.stats.StatsService stats = com.samarth.tourney.stats.StatsBridge.tryGet();
+        if (stats == null || active == null || active.bracket() == null) return;
+        Bracket bracket = active.bracket();
+        int totalRounds = bracket.totalRounds();
+        java.util.Map<UUID, Integer> roundsWonByPlayer = new HashMap<>();
+        for (UUID id : active.players()) roundsWonByPlayer.put(id, 0);
+        for (java.util.List<BracketMatch> round : bracket.rounds()) {
+            for (BracketMatch m : round) {
+                if (m.played() && m.winner() != null) {
+                    roundsWonByPlayer.merge(m.winner(), 1, Integer::sum);
+                }
+            }
+        }
+        long now = System.currentTimeMillis();
+        UUID tournamentId = active.id();
+        for (java.util.Map.Entry<UUID, Integer> e : roundsWonByPlayer.entrySet()) {
+            stats.recordTournamentResult(new com.samarth.stats.model.TournamentResult(
+                now, tournamentId, e.getKey(), e.getValue(), totalRounds));
+        }
     }
 
     /** End the current tournament cleanly. forceful=true means cancellation, otherwise normal end. */

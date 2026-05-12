@@ -4,6 +4,7 @@ main: com.samarth.duels.DuelsPlugin
 api-version: '1.21'
 authors: [Samarth, Weilin]
 description: PvPTL Duels — 1v1 duels with queues, parties, custom kits
+softdepend: [PvPTLStats]
 
 commands:
   duels:

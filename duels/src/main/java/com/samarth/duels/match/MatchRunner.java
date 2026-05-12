@@ -156,6 +156,7 @@ public final class MatchRunner {
                     a.playSound(a.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 1f, 1f);
                     b.playSound(b.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 1f, 1f);
                     if (initialStart) {
+                        m.markStartedNow();
                         scheduleMatchTimer(m);
                         scheduleActionBarRefresh(m);
                     }
@@ -302,6 +303,7 @@ public final class MatchRunner {
                 Placeholder.parsed("loser", nameOf(loserId)),
                 Placeholder.parsed("wscore", String.valueOf(wScore)),
                 Placeholder.parsed("lscore", String.valueOf(lScore))));
+            recordDuelStats(m, winnerId, loserId, wScore, lScore);
         }
 
         if (a != null) finalizePlayer(a, m.playerA().equals(winnerId), m);
@@ -375,6 +377,21 @@ public final class MatchRunner {
     /** Called from MatchListener.onRespawn to recover the pending lobby teleport, if any. */
     public @Nullable Location consumePostMatchTeleport(UUID id) {
         return postMatchTeleport.remove(id);
+    }
+
+    private void recordDuelStats(DuelMatch m, UUID winnerId, UUID loserId, int wRounds, int lRounds) {
+        com.samarth.stats.StatsService stats = com.samarth.duels.stats.StatsBridge.tryGet();
+        if (stats == null) return;
+        long durationSec = m.startMillisOrZero() == 0
+            ? 0
+            : Math.max(0, (System.currentTimeMillis() - m.startMillisOrZero()) / 1000L);
+        stats.recordDuelResult(new com.samarth.stats.model.DuelResult(
+            System.currentTimeMillis(),
+            winnerId, loserId,
+            m.kitName(),
+            m.bestOf(),
+            wRounds, lRounds,
+            durationSec));
     }
 
     public void handleDisconnect(Player p) {
