@@ -1,0 +1,26 @@
+name: PvPTLStats
+version: '${version}'
+main: com.samarth.stats.StatsPlugin
+api-version: '1.21'
+authors: [Samarth, Weilin]
+description: Player stats backend — collects duel/tournament results, exposes /stats /top /profile
+
+# Paper resolves these at runtime — no need to shade.
+libraries:
+  - "org.xerial:sqlite-jdbc:3.46.1.3"
+
+commands:
+  stats:
+    description: Show player stats
+    usage: /stats [player]
+  top:
+    description: Show leaderboards
+    usage: /top <duel-wins|tourney-wins|kd|kit>
+  profile:
+    description: Show player profile (rank/cosmetic hook for future)
+    usage: /profile [player]
+
+permissions:
+  pvptlstats.use:
+    description: Run /stats, /top, /profile
+    default: true

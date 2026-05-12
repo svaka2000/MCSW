@@ -1,0 +1,19 @@
+# =====================================================
+# PvPTL Stats configuration
+# =====================================================
+
+database:
+  # SQLite filename inside this plugin's data folder.
+  filename: "stats.db"
+  # Reserved for future Postgres/MySQL migration. For now, only sqlite is supported.
+  driver: "sqlite"
+
+leaderboard:
+  # Default size for /top
+  default-limit: 10
+  # Maximum allowed limit
+  max-limit: 50
+
+messages:
+  prefix: "<gray>[<aqua>Stats</aqua>]</gray> "
+  no-data: "<gray>No stats recorded for that player yet.</gray>"
