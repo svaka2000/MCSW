@@ -60,6 +60,8 @@ public final class TournamentManager {
     @Nullable private BukkitTask joinWindowTask;
     private final Map<UUID, BukkitTask> graceTasks = new HashMap<>();
     private final Set<UUID> savedToDisk = new HashSet<>();
+    /** Lobby destination queued for a player who finished a match while dead. Consumed on respawn. */
+    private final Map<UUID, Location> postMatchTeleport = new HashMap<>();
 
     public TournamentManager(JavaPlugin plugin, TourneyConfig config, KitService kits,
                               SpectatorService spec, Hud hud, StateStore store) {
@@ -476,14 +478,12 @@ public final class TournamentManager {
         active.activeMatchesByPlayer().remove(m.playerA());
         active.activeMatchesByPlayer().remove(m.playerB());
 
-        // If loser is offline, no inventory restore here; they'll restore on rejoin via store.
-        if (loserId != null) {
-            Player loser = Bukkit.getPlayer(loserId);
-            if (loser != null) {
-                store.restoreIfPresent(loser);
-                savedToDisk.remove(loserId);
-            }
-        }
+        // NOTE: store.restoreIfPresent(loser) is intentionally NOT called here.
+        // The loser is dead at this point; Bukkit silently drops teleport() on a dead
+        // player, and restoreIfPresent would also delete the saved file as a side effect —
+        // which is what stranded the loser at world-spawn before. postMatchPlayer above
+        // now defers the lobby teleport + inventory restore to AFTER the player auto-
+        // respawns (see postMatchAliveCleanup).
 
         // Update bracket
         if (winnerId != null) {
@@ -493,19 +493,57 @@ public final class TournamentManager {
             active.bracket().propagate();
         }
 
+        // Force entity-tracker refresh for both fighters so the winner doesn't see the
+        // loser as "frozen" in their last-known position while they're auto-respawning.
+        refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
+
         Bukkit.getScheduler().runTaskLater(plugin, this::dispatchMatches, 60L);
     }
 
     private void postMatchPlayer(Player p, boolean won, boolean lost) {
-        kits.clear(p);
         if (won) hud.winTitle(p);
         else if (lost) hud.lossTitle(p);
+
         Location lobby = config.lobby();
+
+        // Dead path: defer the teleport + inventory restore until after the auto-respawn
+        // listener (5-tick) puts them back into the world. Otherwise teleport() and any
+        // inventory mutation silently fail and the player ends up at world-spawn.
+        if (p.isDead()) {
+            if (lobby != null) postMatchTeleport.put(p.getUniqueId(), lobby);
+            UUID pid = p.getUniqueId();
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                Player player = Bukkit.getPlayer(pid);
+                if (player == null) return;
+                if (player.isDead()) player.spigot().respawn();
+                postMatchAliveCleanup(player, lost);
+            }, 6L);
+            return;
+        }
+
+        // Alive path: do everything inline.
+        postMatchAliveCleanup(p, lost);
         if (lobby != null) p.teleport(lobby);
+    }
+
+    private void postMatchAliveCleanup(Player p, boolean lost) {
+        kits.clear(p);
         p.setHealth(20.0);
         p.setFoodLevel(20);
         for (PotionEffect pe : p.getActivePotionEffects()) p.removePotionEffect(pe.getType());
         p.sendActionBar(Component.empty());
+        if (lost) {
+            // Eliminated players get their pre-tournament loadout back immediately so they
+            // can spectate or leave without the kit. Champions hold on to the kit until
+            // teardown, which restores their state alongside everyone else.
+            store.restoreIfPresent(p);
+            savedToDisk.remove(p.getUniqueId());
+        }
+    }
+
+    /** Called from MatchListener.onRespawn — recovers the lobby destination queued at endMatch. */
+    public @Nullable Location consumePostMatchTeleport(UUID id) {
+        return postMatchTeleport.remove(id);
     }
 
     private void announceWinner(@Nullable UUID winnerId) {

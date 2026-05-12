@@ -62,6 +62,14 @@ public final class MatchListener implements Listener {
         if (spawn != null) {
             e.setRespawnLocation(spawn);
             manager.onPostRespawn(p);
+            return;
+        }
+        // If a match just ended while this player was dead, send them to the lobby
+        // instead of the world's default spawn (otherwise they appear "frozen" at
+        // world-spawn from the winner's POV).
+        Location post = manager.consumePostMatchTeleport(p.getUniqueId());
+        if (post != null) {
+            e.setRespawnLocation(post);
         }
     }
 
