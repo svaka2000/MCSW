@@ -1,6 +1,7 @@
 package com.samarth.duels.commands;
 
 import com.samarth.duels.DuelsPlugin;
+import com.samarth.duels.ui.DuelSetupHolder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -10,9 +11,10 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
 import org.jetbrains.annotations.NotNull;
 
-/** Direct challenge: /duel &lt;player&gt; [kit] */
+/** /duel &lt;player&gt; — opens the kit-picker GUI. Kit name and customization happen in the GUI. */
 public final class DuelCommand implements CommandExecutor, TabCompleter {
 
     private final DuelsPlugin plugin;
@@ -28,7 +30,7 @@ public final class DuelCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         if (args.length < 1) {
-            sender.sendMessage("§7Usage: §e/duel <player> [kit]");
+            sender.sendMessage("§7Usage: §e/duel <player>");
             return true;
         }
         Player target = Bukkit.getPlayer(args[0]);
@@ -36,23 +38,22 @@ public final class DuelCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("§cPlayer not online.");
             return true;
         }
-        String kit;
-        if (args.length >= 2) {
-            kit = args[1];
-        } else {
-            kit = plugin.config().defaultKit();
-            if (kit.isBlank()) {
-                List<String> names = plugin.kits().names();
-                if (names.isEmpty()) {
-                    sender.sendMessage("§cNo kits saved yet. An op needs to run /duelkit save <name>.");
-                    return true;
-                }
-                kit = names.get(0);
-            }
+        if (target.equals(p)) {
+            sender.sendMessage("§cYou can't duel yourself.");
+            return true;
         }
-        // Direct challenge with current config defaults — the new GUI flow will land
-        // in a follow-up commit (will open a kit picker and customize GUI here instead).
-        plugin.challenges().challenge(p, target, kit, plugin.config().defaultBestOf(), false);
+        if (plugin.matches().isInMatch(p.getUniqueId()) || plugin.matches().isInMatch(target.getUniqueId())) {
+            sender.sendMessage("§cOne of you is already in a duel.");
+            return true;
+        }
+        List<String> kitNames = plugin.kits().names();
+        if (kitNames.isEmpty()) {
+            sender.sendMessage("§cNo kits saved yet. An op needs to run /duelkit save <name>.");
+            return true;
+        }
+        DuelSetupHolder holder = new DuelSetupHolder(target.getUniqueId(), target.getName());
+        Inventory inv = holder.build(plugin.kits());
+        p.openInventory(inv);
         return true;
     }
 
@@ -62,9 +63,6 @@ public final class DuelCommand implements CommandExecutor, TabCompleter {
             List<String> names = new ArrayList<>();
             for (Player pl : Bukkit.getOnlinePlayers()) names.add(pl.getName());
             return names;
-        }
-        if (args.length == 2) {
-            return plugin.kits().names();
         }
         return Collections.emptyList();
     }

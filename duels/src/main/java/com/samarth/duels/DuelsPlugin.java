@@ -39,7 +39,7 @@ public final class DuelsPlugin extends JavaPlugin {
         bind("duelkit", new KitCommand(this, kits));
 
         getServer().getPluginManager().registerEvents(new MatchListener(this, matches), this);
-        getServer().getPluginManager().registerEvents(new NpcInteractionListener(kits, queues), this);
+        getServer().getPluginManager().registerEvents(new NpcInteractionListener(kits, queues, challenges, config), this);
 
         getLogger().info("Duels enabled. Run /duels info to check setup.");
     }
