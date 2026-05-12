@@ -117,7 +117,7 @@ public final class DuelCustomizeHolder implements InventoryHolder {
         ItemMeta m = it.getItemMeta();
         if (m != null) {
             boolean selected = (count == rounds);
-            m.displayName(Component.text("Best of " + count,
+            m.displayName(Component.text("First to " + count,
                 selected ? NamedTextColor.GREEN : NamedTextColor.WHITE)
                 .decoration(TextDecoration.ITALIC, false));
             List<Component> lore = new ArrayList<>();

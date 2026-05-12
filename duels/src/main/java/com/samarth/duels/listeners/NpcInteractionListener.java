@@ -118,12 +118,12 @@ public final class NpcInteractionListener implements Listener {
             viewer.closeInventory();
             DuelCustomizeHolder cust = new DuelCustomizeHolder(
                 target.getUniqueId(), target.getName(), kitName,
-                config.defaultBestOf(), false);
+                config.defaultFirstTo(), false);
             viewer.openInventory(cust.build());
         } else {
             // Left-click — send with defaults (no time limit)
             viewer.closeInventory();
-            challenges.challenge(viewer, target, kitName, config.defaultBestOf(), false);
+            challenges.challenge(viewer, target, kitName, config.defaultFirstTo(), false);
         }
     }
 

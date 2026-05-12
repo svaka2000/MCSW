@@ -9,8 +9,13 @@
 duels:
   # First to this many kills wins each "round" (set to 1 for instakill duels)
   kills-per-round: 1
-  # How many rounds to win the match overall (best of N — must be odd: 1, 3, 5, 7…)
-  default-best-of: 1
+  # Default rounds required to win a match (first-to-N semantics). The /duel
+  # customize GUI lets challengers pick 1/3/5/7; this is the value used by
+  # /duels queue and the default value in the customize GUI.
+  default-first-to: 1
+  # Legacy key — kept for compatibility on existing installs. Use default-first-to
+  # going forward.
+  # default-best-of: 1
   # Pre-fight freeze countdown seconds
   freeze-seconds: 3
   # Match time cap in seconds (auto-finishes; higher score wins)

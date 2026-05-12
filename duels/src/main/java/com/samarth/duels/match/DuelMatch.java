@@ -15,7 +15,8 @@ public final class DuelMatch {
     private final UUID playerA;
     private final UUID playerB;
     private final String kitName;
-    private final int bestOf;
+    /** Number of rounds a player must win to take the match (first-to-N semantics). */
+    private final int firstTo;
     private final boolean useTimeLimit;
     @Nullable private Scoreboard sidebarScoreboard;
 
@@ -37,11 +38,11 @@ public final class DuelMatch {
     private final Map<UUID, Location> savedLocation = new HashMap<>();
     private final Map<UUID, GameMode> savedGameMode = new HashMap<>();
 
-    public DuelMatch(UUID playerA, UUID playerB, String kitName, int bestOf, boolean useTimeLimit) {
+    public DuelMatch(UUID playerA, UUID playerB, String kitName, int firstTo, boolean useTimeLimit) {
         this.playerA = playerA;
         this.playerB = playerB;
         this.kitName = kitName;
-        this.bestOf = Math.max(1, bestOf);
+        this.firstTo = Math.max(1, firstTo);
         this.useTimeLimit = useTimeLimit;
     }
 
@@ -49,9 +50,10 @@ public final class DuelMatch {
     public UUID playerA() { return playerA; }
     public UUID playerB() { return playerB; }
     public String kitName() { return kitName; }
-    public int bestOf() { return bestOf; }
+    public int firstTo() { return firstTo; }
     public boolean useTimeLimit() { return useTimeLimit; }
-    public int roundsNeeded() { return (bestOf / 2) + 1; }
+    /** Rounds required to win the match. With first-to semantics, this is just firstTo. */
+    public int roundsNeeded() { return firstTo; }
 
     public @Nullable Scoreboard sidebarScoreboard() { return sidebarScoreboard; }
     public void setSidebarScoreboard(@Nullable Scoreboard sb) { this.sidebarScoreboard = sb; }

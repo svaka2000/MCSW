@@ -114,7 +114,7 @@ public final class QueueService {
         removeLeaveBarrier(a);
         removeLeaveBarrier(b);
         // Queue uses default best-of; no time limit (default off, per design).
-        runner.start(a, b, kitName, config.defaultBestOf(), false);
+        runner.start(a, b, kitName, config.defaultFirstTo(), false);
     }
 
     private void reEnqueue(Player p, String kitName) {

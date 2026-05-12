@@ -63,7 +63,7 @@ public final class MatchRunner {
 
     public boolean isArenaBusy() { return arenaInUse != null; }
 
-    public void start(Player a, Player b, String kitName, int bestOf, boolean useTimeLimit) {
+    public void start(Player a, Player b, String kitName, int firstTo, boolean useTimeLimit) {
         if (!config.isArenaReady()) {
             send(a, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
             send(b, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
@@ -80,13 +80,13 @@ public final class MatchRunner {
             return;
         }
         if (arenaInUse != null) {
-            waiting.add(new PendingDuel(a.getUniqueId(), b.getUniqueId(), kitName, bestOf, useTimeLimit));
+            waiting.add(new PendingDuel(a.getUniqueId(), b.getUniqueId(), kitName, firstTo, useTimeLimit));
             send(a, "<gray>Arena busy — waiting for current duel to finish. (#" + waiting.size() + " in queue)</gray>");
             send(b, "<gray>Arena busy — waiting for current duel to finish. (#" + waiting.size() + " in queue)</gray>");
             return;
         }
 
-        DuelMatch m = new DuelMatch(a.getUniqueId(), b.getUniqueId(), kitName, bestOf, useTimeLimit);
+        DuelMatch m = new DuelMatch(a.getUniqueId(), b.getUniqueId(), kitName, firstTo, useTimeLimit);
         arenaInUse = m;
         matchByPlayer.put(a.getUniqueId(), m);
         matchByPlayer.put(b.getUniqueId(), m);
@@ -389,7 +389,7 @@ public final class MatchRunner {
             System.currentTimeMillis(),
             winnerId, loserId,
             m.kitName(),
-            m.bestOf(),
+            m.firstTo(),
             wRounds, lRounds,
             durationSec));
     }
@@ -413,7 +413,7 @@ public final class MatchRunner {
             startNextWaiting();
             return;
         }
-        start(a, b, next.kit, next.bestOf, next.useTimeLimit);
+        start(a, b, next.kit, next.firstTo, next.useTimeLimit);
     }
 
     private void refreshPlayerVisibility(List<UUID> participants) {
@@ -536,10 +536,10 @@ public final class MatchRunner {
     private static final class PendingDuel {
         final UUID a, b;
         final String kit;
-        final int bestOf;
+        final int firstTo;
         final boolean useTimeLimit;
-        PendingDuel(UUID a, UUID b, String kit, int bestOf, boolean useTimeLimit) {
-            this.a = a; this.b = b; this.kit = kit; this.bestOf = bestOf; this.useTimeLimit = useTimeLimit;
+        PendingDuel(UUID a, UUID b, String kit, int firstTo, boolean useTimeLimit) {
+            this.a = a; this.b = b; this.kit = kit; this.firstTo = firstTo; this.useTimeLimit = useTimeLimit;
         }
     }
 }

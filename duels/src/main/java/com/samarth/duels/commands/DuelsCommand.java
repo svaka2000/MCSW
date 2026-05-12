@@ -90,7 +90,7 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§7Arena A: " + (c.arenaA() == null ? "§c✗" : "§a✓ " + DuelsConfig.describe(c.arenaA())));
         sender.sendMessage("§7Arena B: " + (c.arenaB() == null ? "§c✗" : "§a✓ " + DuelsConfig.describe(c.arenaB())));
         sender.sendMessage("§7Kits saved: §f" + plugin.kits().names().size());
-        sender.sendMessage("§7Default best-of: §f" + c.defaultBestOf());
+        sender.sendMessage("§7Default first-to: §f" + c.defaultFirstTo());
         sender.sendMessage("§7Arena busy: " + (plugin.matches().isArenaBusy() ? "§ayes" : "§7no"));
     }
 

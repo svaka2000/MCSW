@@ -24,7 +24,15 @@ public final class DuelsConfig {
     }
 
     public int killsPerRound() { return plugin.getConfig().getInt("duels.kills-per-round", 1); }
-    public int defaultBestOf() { return plugin.getConfig().getInt("duels.default-best-of", 1); }
+    /**
+     * Number of round wins required by default. Used by /duels queue and as the
+     * starting value in the /duel customize GUI. Config key uses first-to semantics.
+     * For backwards compatibility, falls back to the old default-best-of key if present.
+     */
+    public int defaultFirstTo() {
+        return plugin.getConfig().getInt("duels.default-first-to",
+            plugin.getConfig().getInt("duels.default-best-of", 1));
+    }
     public int freezeSeconds() { return plugin.getConfig().getInt("duels.freeze-seconds", 3); }
     public int matchTimeCapSeconds() { return plugin.getConfig().getInt("duels.match-time-cap-seconds", 180); }
     public int challengeTimeoutSeconds() { return plugin.getConfig().getInt("duels.challenge-timeout-seconds", 30); }
