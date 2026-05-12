@@ -51,11 +51,6 @@ public final class QueueService {
         q.addLast(p.getUniqueId());
         kitByPlayer.put(p.getUniqueId(), kitName.toLowerCase());
 
-        send(p, MM.deserialize(config.msg("queued"),
-            Placeholder.parsed("kit", kitName),
-            Placeholder.parsed("count", String.valueOf(q.size()))).insertion(null) == null
-            ? "<green>Queued.</green>"
-            : null);
         send(p, config.msg("queued")
             .replace("<kit>", kitName)
             .replace("<count>", String.valueOf(q.size())));
