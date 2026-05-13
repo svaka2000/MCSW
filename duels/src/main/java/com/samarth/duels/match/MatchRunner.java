@@ -3,6 +3,7 @@ package com.samarth.duels.match;
 import com.samarth.duels.config.DuelsConfig;
 import com.samarth.duels.kit.KitsBridge;
 import com.samarth.kits.KitService;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -30,14 +31,16 @@ import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Score;
 import org.bukkit.scoreboard.Scoreboard;
 import org.jetbrains.annotations.Nullable;
-import java.time.Duration;
 
 /**
  * Runs the lifecycle of a single duel: save inventories, teleport, apply kit,
- * freeze countdown, fight, round resets on kill, end + restore.
+ * freeze countdown, fight, round resets on team elimination, end + restore.
  *
- * Designed for one arena at a time. If both fighters need to share the same arena
- * with another duel, the second duel queues (returns false from start()).
+ * Supports N-vs-N teams. A "round" ends when one entire team is dead in the round;
+ * the surviving team gets a round win. First-to-N round wins takes the match.
+ *
+ * Designed for one arena at a time. If both teams need to share the same arena
+ * with another duel, the second duel queues (waits until current ends).
  */
 public final class MatchRunner {
     private static final MiniMessage MM = MiniMessage.miniMessage();
@@ -68,60 +71,103 @@ public final class MatchRunner {
 
     public boolean isArenaBusy() { return arenaInUse != null; }
 
+    /** 1v1 convenience — wraps single players into single-element teams. */
     public void start(Player a, Player b, String kitName, int firstTo, boolean useTimeLimit) {
+        start(List.of(a), List.of(b), kitName, firstTo, useTimeLimit);
+    }
+
+    /**
+     * Start a duel between two teams. Each team's slot index in its list maps to the
+     * corresponding arena spawn slot (team A slot 0 → spawnsA[0], etc.).
+     */
+    public void start(List<Player> teamA, List<Player> teamB,
+                      String kitName, int firstTo, boolean useTimeLimit) {
+        if (teamA.isEmpty() || teamB.isEmpty()) return;
         if (!config.isArenaReady()) {
-            send(a, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
-            send(b, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
+            broadcastTo(teamA, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
+            broadcastTo(teamB, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
+            return;
+        }
+        List<Location> spawnsA = config.spawnsA();
+        List<Location> spawnsB = config.spawnsB();
+        if (spawnsA.size() < teamA.size() || spawnsB.size() < teamB.size()) {
+            String err = "<red>Arena only has " + spawnsA.size() + " vs " + spawnsB.size()
+                + " spawns — not enough for a " + teamA.size() + "v" + teamB.size()
+                + " match. Ask an op to add more with /duels setarena.</red>";
+            broadcastTo(teamA, err);
+            broadcastTo(teamB, err);
             return;
         }
         KitService kits = KitsBridge.tryGet();
         if (kits == null) {
-            send(a, "<red>PvPTLKits not loaded — duels cannot run.</red>");
-            send(b, "<red>PvPTLKits not loaded — duels cannot run.</red>");
+            broadcastTo(teamA, "<red>PvPTLKits not loaded — duels cannot run.</red>");
+            broadcastTo(teamB, "<red>PvPTLKits not loaded — duels cannot run.</red>");
             return;
         }
         if (kits.get(kitName) == null) {
-            send(a, "<red>Kit '" + kitName + "' doesn't exist.</red>");
-            send(b, "<red>Kit '" + kitName + "' doesn't exist.</red>");
+            broadcastTo(teamA, "<red>Kit '" + kitName + "' doesn't exist.</red>");
+            broadcastTo(teamB, "<red>Kit '" + kitName + "' doesn't exist.</red>");
             return;
         }
-        if (isInMatch(a.getUniqueId()) || isInMatch(b.getUniqueId())) {
-            send(a, "<red>One of you is already in a duel.</red>");
-            return;
+        for (Player p : teamA) {
+            if (isInMatch(p.getUniqueId())) {
+                broadcastTo(teamA, "<red>" + p.getName() + " is already in a duel.</red>");
+                broadcastTo(teamB, "<red>" + p.getName() + " is already in a duel.</red>");
+                return;
+            }
+        }
+        for (Player p : teamB) {
+            if (isInMatch(p.getUniqueId())) {
+                broadcastTo(teamA, "<red>" + p.getName() + " is already in a duel.</red>");
+                broadcastTo(teamB, "<red>" + p.getName() + " is already in a duel.</red>");
+                return;
+            }
         }
         if (arenaInUse != null) {
-            waiting.add(new PendingDuel(a.getUniqueId(), b.getUniqueId(), kitName, firstTo, useTimeLimit));
-            send(a, "<gray>Arena busy — waiting for current duel to finish. (#" + waiting.size() + " in queue)</gray>");
-            send(b, "<gray>Arena busy — waiting for current duel to finish. (#" + waiting.size() + " in queue)</gray>");
+            List<UUID> idsA = toIds(teamA);
+            List<UUID> idsB = toIds(teamB);
+            waiting.add(new PendingDuel(idsA, idsB, kitName, firstTo, useTimeLimit));
+            String waitMsg = "<gray>Arena busy — waiting for current duel to finish. (#"
+                + waiting.size() + " in queue)</gray>";
+            broadcastTo(teamA, waitMsg);
+            broadcastTo(teamB, waitMsg);
             return;
         }
 
-        DuelMatch m = new DuelMatch(a.getUniqueId(), b.getUniqueId(), kitName, firstTo, useTimeLimit);
+        DuelMatch m = new DuelMatch(toIds(teamA), toIds(teamB), kitName, firstTo, useTimeLimit);
         arenaInUse = m;
-        matchByPlayer.put(a.getUniqueId(), m);
-        matchByPlayer.put(b.getUniqueId(), m);
+        for (Player p : teamA) matchByPlayer.put(p.getUniqueId(), m);
+        for (Player p : teamB) matchByPlayer.put(p.getUniqueId(), m);
         m.setState(MatchState.PREP);
 
-        send(a, config.msg("match-found"));
-        send(b, config.msg("match-found"));
+        broadcastTo(teamA, config.msg("match-found"));
+        broadcastTo(teamB, config.msg("match-found"));
 
-        saveAndPrepare(a, kitName, config.arenaA(), m);
-        saveAndPrepare(b, kitName, config.arenaB(), m);
+        // Save + prepare each fighter on their slot's spawn.
+        for (int i = 0; i < teamA.size(); i++) {
+            saveAndPrepare(teamA.get(i), kitName, spawnsA.get(i), m);
+        }
+        for (int i = 0; i < teamB.size(); i++) {
+            saveAndPrepare(teamB.get(i), kitName, spawnsB.get(i), m);
+        }
 
         Component prep = MM.deserialize(config.msg("match-prep"));
-        Component subA = Component.text("vs " + b.getName());
-        Component subB = Component.text("vs " + a.getName());
-        a.showTitle(Title.title(prep, subA, Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
-        b.showTitle(Title.title(prep, subB, Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
+        String aLabel = labelFor(teamA);
+        String bLabel = labelFor(teamB);
+        for (Player p : teamA) {
+            p.showTitle(Title.title(prep, Component.text("vs " + bLabel),
+                Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
+        }
+        for (Player p : teamB) {
+            p.showTitle(Title.title(prep, Component.text("vs " + aLabel),
+                Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
+        }
 
-        // Build and attach the per-match sidebar showing server IP and live round score.
         rebuildSidebar(m);
 
-        // Refresh entity tracking right after teleport — gives clients the freeze
-        // countdown duration to settle on accurate positions before fighting starts.
-        // Done HERE (start of freeze) instead of at PREP→FIGHTING so the brief
-        // hide/show window doesn't overlap with combat.
-        refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
+        // Refresh entity tracking after teleport so clients have the freeze countdown
+        // to settle on accurate positions before fighting starts.
+        refreshPlayerVisibility(m.allPlayers());
 
         scheduleFreeze(m, true);
     }
@@ -137,7 +183,6 @@ public final class MatchRunner {
     }
 
     private void prepareFighter(Player p, String kitName, Location spawn) {
-        // Pre-load the destination chunk so the teleport lands in a fully synced area.
         if (spawn.getWorld() != null) {
             try { spawn.getChunk(); } catch (Throwable ignored) {}
         }
@@ -158,14 +203,18 @@ public final class MatchRunner {
             int remaining = seconds;
             @Override public void run() {
                 if (m.state() != MatchState.PREP) { cancel(); return; }
-                Player a = Bukkit.getPlayer(m.playerA());
-                Player b = Bukkit.getPlayer(m.playerB());
-                if (a == null || b == null) { cancel(); return; }
+                if (!hasOnlinePlayerInTeam(m.teamA()) || !hasOnlinePlayerInTeam(m.teamB())) {
+                    cancel();
+                    return;
+                }
                 if (remaining <= 0) {
                     m.setState(MatchState.FIGHTING);
-                    showFightTitle(a); showFightTitle(b);
-                    a.playSound(a.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 1f, 1f);
-                    b.playSound(b.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 1f, 1f);
+                    for (UUID id : m.allPlayers()) {
+                        Player p = Bukkit.getPlayer(id);
+                        if (p == null) continue;
+                        showFightTitle(p);
+                        p.playSound(p.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 1f, 1f);
+                    }
                     if (initialStart) {
                         m.markStartedNow();
                         scheduleMatchTimer(m);
@@ -174,9 +223,12 @@ public final class MatchRunner {
                     cancel();
                     return;
                 }
-                showCountdownTitle(a, remaining); showCountdownTitle(b, remaining);
-                a.playSound(a.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1f, 1f);
-                b.playSound(b.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1f, 1f);
+                for (UUID id : m.allPlayers()) {
+                    Player p = Bukkit.getPlayer(id);
+                    if (p == null) continue;
+                    showCountdownTitle(p, remaining);
+                    p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1f, 1f);
+                }
                 remaining--;
             }
         }.runTaskTimer(plugin, 20L, 20L);
@@ -188,12 +240,12 @@ public final class MatchRunner {
         long capTicks = (long) config.matchTimeCapSeconds() * 20L;
         BukkitTask t = Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (m.state() != MatchState.FIGHTING) return;
-            UUID winner;
-            if (m.roundsA() > m.roundsB()) winner = m.playerA();
-            else if (m.roundsB() > m.roundsA()) winner = m.playerB();
-            else winner = m.playerA(); // tie tiebreak
+            int winningTeam;
+            if (m.roundsA() > m.roundsB()) winningTeam = 1;
+            else if (m.roundsB() > m.roundsA()) winningTeam = 2;
+            else winningTeam = 1; // tiebreak: Team A
             broadcastPrefixed(MM.deserialize("<yellow>Match time cap reached — higher round count wins.</yellow>"));
-            endMatch(m, winner);
+            endMatch(m, winningTeam);
         }, capTicks);
         m.setTimerTask(t);
     }
@@ -205,17 +257,19 @@ public final class MatchRunner {
                     cancel();
                     return;
                 }
-                Player a = Bukkit.getPlayer(m.playerA());
-                Player b = Bukkit.getPlayer(m.playerB());
-                if (a != null) {
-                    a.setFoodLevel(20);
-                    a.setSaturation(0f);
-                    a.sendActionBar(killBar(m.roundsA(), m.roundsB()));
+                for (UUID id : m.teamA()) {
+                    Player p = Bukkit.getPlayer(id);
+                    if (p == null) continue;
+                    p.setFoodLevel(20);
+                    p.setSaturation(0f);
+                    p.sendActionBar(killBar(m.roundsA(), m.roundsB()));
                 }
-                if (b != null) {
-                    b.setFoodLevel(20);
-                    b.setSaturation(0f);
-                    b.sendActionBar(killBar(m.roundsB(), m.roundsA()));
+                for (UUID id : m.teamB()) {
+                    Player p = Bukkit.getPlayer(id);
+                    if (p == null) continue;
+                    p.setFoodLevel(20);
+                    p.setSaturation(0f);
+                    p.sendActionBar(killBar(m.roundsB(), m.roundsA()));
                 }
             }
         }.runTaskTimer(plugin, 1L, 1L);
@@ -225,40 +279,64 @@ public final class MatchRunner {
     public void onPlayerKilled(Player victim, @Nullable Player killer) {
         DuelMatch m = matchByPlayer.get(victim.getUniqueId());
         if (m == null || m.state() != MatchState.FIGHTING) return;
-        UUID opponentId = m.opponentOf(victim.getUniqueId());
-        boolean award = killer == null || opponentId.equals(killer.getUniqueId());
-        if (!award) return;
+        UUID victimId = victim.getUniqueId();
+        if (m.isDeadInRound(victimId)) return; // dedupe
 
-        if (opponentId.equals(m.playerA())) m.incrementKillsA();
-        else m.incrementKillsB();
+        int victimTeam = m.teamOf(victimId);
+        if (victimTeam == 0) return;
 
-        int killsToRound = config.killsPerRound();
-        boolean roundOver = false;
-        UUID roundWinner = null;
-        if (m.killsA() >= killsToRound) {
-            m.incrementRoundsA();
-            roundWinner = m.playerA();
-            roundOver = true;
-        } else if (m.killsB() >= killsToRound) {
-            m.incrementRoundsB();
-            roundWinner = m.playerB();
-            roundOver = true;
+        m.markDeadInRound(victimId);
+
+        // Credit kill to the opposing team's tally if killer is on the opposing team.
+        if (killer != null) {
+            int killerTeam = m.teamOf(killer.getUniqueId());
+            if (killerTeam != 0 && killerTeam != victimTeam) {
+                if (killerTeam == 1) m.incrementKillsA();
+                else m.incrementKillsB();
+            }
         }
 
-        if (roundOver) {
-            // Sound effects: levelup for round winner, low bass for loser
-            Player rw = Bukkit.getPlayer(roundWinner);
-            Player rl = Bukkit.getPlayer(m.opponentOf(roundWinner));
-            if (rw != null) rw.playSound(rw.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
-            if (rl != null) rl.playSound(rl.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.5f);
-            // Refresh sidebar with new round score
-            rebuildSidebar(m);
-            int needed = m.roundsNeeded();
-            if (m.roundsA() >= needed) { endMatch(m, m.playerA()); return; }
-            if (m.roundsB() >= needed) { endMatch(m, m.playerB()); return; }
-            // Reset for next round
-            m.setState(MatchState.PREP);
-            m.resetKills();
+        // Round-end check: one team fully dead in round.
+        boolean teamADead = m.teamAFullyDead();
+        boolean teamBDead = m.teamBFullyDead();
+        if (!teamADead && !teamBDead) return;
+
+        int winningTeam;
+        if (teamADead && !teamBDead) winningTeam = 2;
+        else if (teamBDead && !teamADead) winningTeam = 1;
+        else winningTeam = 0; // mutual KO — no round advance
+
+        if (winningTeam == 1) m.incrementRoundsA();
+        else if (winningTeam == 2) m.incrementRoundsB();
+
+        playRoundEndSounds(m, winningTeam);
+        rebuildSidebar(m);
+
+        int needed = m.roundsNeeded();
+        if (m.roundsA() >= needed) { endMatch(m, 1); return; }
+        if (m.roundsB() >= needed) { endMatch(m, 2); return; }
+
+        // Set up for next round.
+        m.setState(MatchState.PREP);
+        m.resetKills();
+        // Give dead players ~1s to auto-respawn before we reset.
+        Bukkit.getScheduler().runTaskLater(plugin, () -> resetRound(m), 20L);
+    }
+
+    private void playRoundEndSounds(DuelMatch m, int winningTeam) {
+        List<UUID> winners = winningTeam == 1 ? m.teamA()
+                           : winningTeam == 2 ? m.teamB()
+                           : List.of();
+        List<UUID> losers = winningTeam == 1 ? m.teamB()
+                          : winningTeam == 2 ? m.teamA()
+                          : m.allPlayers();
+        for (UUID id : winners) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) p.playSound(p.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
+        }
+        for (UUID id : losers) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.5f);
         }
     }
 
@@ -266,81 +344,108 @@ public final class MatchRunner {
         DuelMatch m = matchByPlayer.get(victim.getUniqueId());
         if (m == null) return null;
         if (m.state() == MatchState.ENDED || m.state() == MatchState.PENDING) return null;
-        return victim.getUniqueId().equals(m.playerA()) ? config.arenaA() : config.arenaB();
+        int team = m.teamOf(victim.getUniqueId());
+        if (team == 0) return null;
+        List<Location> spawns = team == 1 ? config.spawnsA() : config.spawnsB();
+        if (spawns.isEmpty()) return null;
+        int slot = m.slotOf(victim.getUniqueId());
+        if (slot < 0 || slot >= spawns.size()) slot = 0;
+        return spawns.get(slot);
     }
 
     public void onPostRespawn(Player p) {
         DuelMatch m = matchByPlayer.get(p.getUniqueId());
         if (m == null) return;
-        if (m.state() == MatchState.PREP) {
-            Bukkit.getScheduler().runTaskLater(plugin, () -> resetRound(m), 1L);
+        // Mid-round: surviving teammates still fighting, this player is out for the round.
+        if (m.state() == MatchState.FIGHTING && m.isDeadInRound(p.getUniqueId())) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (p.isOnline()) p.setGameMode(GameMode.SPECTATOR);
+            }, 1L);
         }
+        // If state == PREP, resetRound will fully restore this player on its scheduled tick —
+        // no per-respawn action needed here.
     }
 
     private void resetRound(DuelMatch m) {
         if (m.state() != MatchState.PREP) return;
-        Player a = Bukkit.getPlayer(m.playerA());
-        Player b = Bukkit.getPlayer(m.playerB());
-        if (a == null || b == null) return;
-        prepareFighter(a, m.kitName(), config.arenaA());
-        prepareFighter(b, m.kitName(), config.arenaB());
+        List<Location> spawnsA = config.spawnsA();
+        List<Location> spawnsB = config.spawnsB();
+        if (spawnsA.size() < m.teamA().size() || spawnsB.size() < m.teamB().size()) {
+            // Arena got reconfigured mid-match; bail out cleanly.
+            endMatch(m, 0);
+            return;
+        }
+        for (int i = 0; i < m.teamA().size(); i++) {
+            Player p = Bukkit.getPlayer(m.teamA().get(i));
+            if (p == null) continue;
+            prepareFighter(p, m.kitName(), spawnsA.get(i));
+        }
+        for (int i = 0; i < m.teamB().size(); i++) {
+            Player p = Bukkit.getPlayer(m.teamB().get(i));
+            if (p == null) continue;
+            prepareFighter(p, m.kitName(), spawnsB.get(i));
+        }
+        m.clearDeadInRound();
+
         Component prep = MM.deserialize(config.msg("match-prep"));
-        a.showTitle(Title.title(prep, Component.text("Next round…"), Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
-        b.showTitle(Title.title(prep, Component.text("Next round…"), Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
-        // Refresh tracking after the round-reset teleport too.
-        refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
+        for (UUID id : m.allPlayers()) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) {
+                p.showTitle(Title.title(prep, Component.text("Next round…"),
+                    Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
+            }
+        }
+        refreshPlayerVisibility(m.allPlayers());
         scheduleFreeze(m, false);
     }
 
-    private void endMatch(DuelMatch m, @Nullable UUID winnerId) {
+    private void endMatch(DuelMatch m, int winningTeam) {
         if (m.state() == MatchState.ENDED) return;
         m.setState(MatchState.ENDED);
         cancelTask(m.freezeTask()); m.setFreezeTask(null);
         cancelTask(m.timerTask()); m.setTimerTask(null);
         cancelTask(m.actionBarTask()); m.setActionBarTask(null);
 
-        UUID loserId = winnerId == null ? null : (winnerId.equals(m.playerA()) ? m.playerB() : m.playerA());
-        Player a = Bukkit.getPlayer(m.playerA());
-        Player b = Bukkit.getPlayer(m.playerB());
-
-        // Broadcast score
-        if (winnerId != null && loserId != null) {
-            int wScore = winnerId.equals(m.playerA()) ? m.roundsA() : m.roundsB();
-            int lScore = winnerId.equals(m.playerA()) ? m.roundsB() : m.roundsA();
+        if (winningTeam == 1 || winningTeam == 2) {
+            List<UUID> winners = winningTeam == 1 ? m.teamA() : m.teamB();
+            List<UUID> losers = winningTeam == 1 ? m.teamB() : m.teamA();
+            int wScore = winningTeam == 1 ? m.roundsA() : m.roundsB();
+            int lScore = winningTeam == 1 ? m.roundsB() : m.roundsA();
             broadcastPrefixed(MM.deserialize(config.msg("match-result-broadcast"),
-                Placeholder.parsed("winner", nameOf(winnerId)),
-                Placeholder.parsed("loser", nameOf(loserId)),
+                Placeholder.parsed("winner", joinNames(winners)),
+                Placeholder.parsed("loser", joinNames(losers)),
                 Placeholder.parsed("wscore", String.valueOf(wScore)),
                 Placeholder.parsed("lscore", String.valueOf(lScore))));
-            recordDuelStats(m, winnerId, loserId, wScore, lScore);
+            // 1v1 stats only for now — team duel stats can come later.
+            if (!m.isTeamMatch()) {
+                recordDuelStats(m, winners.get(0), losers.get(0), wScore, lScore);
+            }
         }
 
-        if (a != null) finalizePlayer(a, m.playerA().equals(winnerId), m);
-        if (b != null) finalizePlayer(b, m.playerB().equals(winnerId), m);
+        for (UUID id : m.allPlayers()) {
+            Player p = Bukkit.getPlayer(id);
+            if (p == null) continue;
+            boolean won = winningTeam != 0 && winningTeam == m.teamOf(id);
+            finalizePlayer(p, won, m);
+        }
 
-        matchByPlayer.remove(m.playerA());
-        matchByPlayer.remove(m.playerB());
+        List<UUID> allIds = m.allPlayers();
+        for (UUID id : allIds) matchByPlayer.remove(id);
         arenaInUse = null;
 
-        // Entity tracker refresh, like Tourney teardown — prevents post-match desync
-        refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
+        refreshPlayerVisibility(allIds);
 
-        // Give each finished player a "Requeue: <kit>" paper after they've settled.
-        // 20-tick delay so any in-flight respawn / lobby teleport (dead-loser path)
-        // completes first — otherwise the paper gets nuked by the inventory restore.
+        // Give each finished player a "Requeue: <kit>" paper once they've settled.
         if (queues != null) {
-            UUID aId = m.playerA();
-            UUID bId = m.playerB();
             String kit = m.kitName();
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                Player ap = Bukkit.getPlayer(aId);
-                Player bp = Bukkit.getPlayer(bId);
-                if (ap != null && !isInMatch(aId)) queues.giveRequeueItem(ap, kit);
-                if (bp != null && !isInMatch(bId)) queues.giveRequeueItem(bp, kit);
+                for (UUID id : allIds) {
+                    Player p = Bukkit.getPlayer(id);
+                    if (p != null && !isInMatch(id)) queues.giveRequeueItem(p, kit);
+                }
             }, 20L);
         }
 
-        // Pump the waiting queue (if any other duels were waiting on this arena)
         Bukkit.getScheduler().runTaskLater(plugin, this::startNextWaiting, 60L);
     }
 
@@ -353,20 +458,15 @@ public final class MatchRunner {
             p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
         }
 
-        // Detach sidebar (set back to server-wide main scoreboard)
         p.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
 
-        // Compute destination: lobby if configured, otherwise pre-duel location
         Location lobby = config.lobby();
         Location savedLoc = m.savedLocation().get(p.getUniqueId());
         Location destination = lobby != null ? lobby : savedLoc;
 
-        // If the player is dead (typical loser, or mutual-kill winner), Bukkit silently
-        // drops the teleport. Defer to respawn handling instead.
+        // Dead loser path — defer to respawn handling so Bukkit doesn't drop the teleport.
         if (p.isDead()) {
             if (destination != null) postMatchTeleport.put(p.getUniqueId(), destination);
-            // Restore the player's saved inventory/mode in 1 tick — by then they should
-            // have been auto-respawned by the death listener.
             DuelMatch matchRef = m;
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 if (!p.isOnline()) return;
@@ -376,7 +476,12 @@ public final class MatchRunner {
             return;
         }
 
-        // Alive — restore immediately.
+        // Spectators (dead-in-round players from a finished match) need to come back to survival
+        // BEFORE the lobby teleport — spectator-mode players can't be teleported reliably.
+        if (p.getGameMode() == GameMode.SPECTATOR) {
+            p.setGameMode(GameMode.SURVIVAL);
+        }
+
         restoreSavedLoadout(p, m);
         if (destination != null) p.teleport(destination);
     }
@@ -421,23 +526,35 @@ public final class MatchRunner {
     public void handleDisconnect(Player p) {
         DuelMatch m = matchByPlayer.get(p.getUniqueId());
         if (m == null) return;
-        // Auto-forfeit
-        UUID winner = p.getUniqueId().equals(m.playerA()) ? m.playerB() : m.playerA();
-        broadcastPrefixed(MM.deserialize("<gray><player> disconnected — auto-forfeit.</gray>",
+        int team = m.teamOf(p.getUniqueId());
+        if (team == 0) return;
+
+        broadcastPrefixed(MM.deserialize("<gray><player> disconnected.</gray>",
             Placeholder.parsed("player", p.getName())));
-        endMatch(m, winner);
+
+        // Treat them as eliminated for round purposes.
+        m.markDeadInRound(p.getUniqueId());
+        matchByPlayer.remove(p.getUniqueId());
+
+        boolean teamAOut = m.teamAFullyDead();
+        boolean teamBOut = m.teamBFullyDead();
+        if (teamAOut && !teamBOut) { endMatch(m, 2); return; }
+        if (teamBOut && !teamAOut) { endMatch(m, 1); return; }
+        if (teamAOut && teamBOut) { endMatch(m, 0); return; }
+        // Otherwise: teammates are still alive — match continues without them.
     }
 
     private void startNextWaiting() {
         if (arenaInUse != null || waiting.isEmpty()) return;
         PendingDuel next = waiting.remove(0);
-        Player a = Bukkit.getPlayer(next.a);
-        Player b = Bukkit.getPlayer(next.b);
-        if (a == null || b == null) {
+        List<Player> teamA = onlinePlayersFor(next.teamA);
+        List<Player> teamB = onlinePlayersFor(next.teamB);
+        if (teamA.size() != next.teamA.size() || teamB.size() != next.teamB.size()) {
+            // One or more participants left — skip and try the next waiter.
             startNextWaiting();
             return;
         }
-        start(a, b, next.kit, next.firstTo, next.useTimeLimit);
+        start(teamA, teamB, next.kit, next.firstTo, next.useTimeLimit);
     }
 
     private void refreshPlayerVisibility(List<UUID> participants) {
@@ -466,7 +583,7 @@ public final class MatchRunner {
 
     // ----- sidebar scoreboard -----
 
-    /** Build/refresh the duel sidebar (server IP + live round score) and attach to both fighters. */
+    /** Build/refresh the duel sidebar (server IP + live round score) and attach to all fighters. */
     private void rebuildSidebar(DuelMatch m) {
         Scoreboard sb = m.sidebarScoreboard();
         boolean firstBuild = false;
@@ -481,35 +598,38 @@ public final class MatchRunner {
         if (obj == null) return;
         if (firstBuild) {
             obj.setDisplaySlot(DisplaySlot.SIDEBAR);
-            // Hide the score numbers next to each line (Paper 1.20.4+).
             try {
                 obj.numberFormat(io.papermc.paper.scoreboard.numbers.NumberFormat.blank());
             } catch (Throwable ignored) {
-                // Older Paper — numbers will be visible; acceptable.
+                // Older Paper — score numbers visible; acceptable.
             }
         }
         for (String entry : new ArrayList<>(sb.getEntries())) {
             sb.resetScores(entry);
         }
 
-        String aName = nameOf(m.playerA());
-        String bName = nameOf(m.playerB());
         int needed = m.roundsNeeded();
         String ip = config.serverIp();
+        String teamALabel = m.isTeamMatch()
+            ? "Team A (" + m.teamA().size() + ")"
+            : nameOf(m.playerA());
+        String teamBLabel = m.isTeamMatch()
+            ? "Team B (" + m.teamB().size() + ")"
+            : nameOf(m.playerB());
 
         // Score numbers determine vertical order (higher score = top).
         setLine(obj, "§7Server", 7);
         setLine(obj, "§b" + ip, 6);
         setLine(obj, "§r", 5);
-        setLine(obj, "§b" + truncate(aName, 14) + " §8: §f" + m.roundsA(), 4);
-        setLine(obj, "§c" + truncate(bName, 14) + " §8: §f" + m.roundsB(), 3);
+        setLine(obj, "§b" + truncate(teamALabel, 16) + " §8: §f" + m.roundsA(), 4);
+        setLine(obj, "§c" + truncate(teamBLabel, 16) + " §8: §f" + m.roundsB(), 3);
         setLine(obj, "§l", 2);
         setLine(obj, "§7First to §f" + needed, 1);
 
-        Player a = Bukkit.getPlayer(m.playerA());
-        Player b = Bukkit.getPlayer(m.playerB());
-        if (a != null) a.setScoreboard(sb);
-        if (b != null) b.setScoreboard(sb);
+        for (UUID id : m.allPlayers()) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) p.setScoreboard(sb);
+        }
     }
 
     private static void setLine(Objective obj, String entry, int scoreValue) {
@@ -525,7 +645,8 @@ public final class MatchRunner {
 
     private void showFightTitle(Player p) {
         Component fight = MM.deserialize(config.msg("match-fight"));
-        p.showTitle(Title.title(fight, Component.empty(), Title.Times.times(Duration.ofMillis(50), Duration.ofMillis(800), Duration.ofMillis(200))));
+        p.showTitle(Title.title(fight, Component.empty(),
+            Title.Times.times(Duration.ofMillis(50), Duration.ofMillis(800), Duration.ofMillis(200))));
     }
 
     private void showCountdownTitle(Player p, int seconds) {
@@ -544,6 +665,10 @@ public final class MatchRunner {
         p.sendMessage(MM.deserialize(config.prefix()).append(MM.deserialize(msg)));
     }
 
+    private void broadcastTo(List<Player> players, String msg) {
+        for (Player p : players) send(p, msg);
+    }
+
     private void broadcastPrefixed(Component c) {
         Bukkit.broadcast(MM.deserialize(config.prefix()).append(c));
     }
@@ -553,17 +678,65 @@ public final class MatchRunner {
         return n == null ? "?" : n;
     }
 
+    private static String joinNames(List<UUID> ids) {
+        if (ids.isEmpty()) return "?";
+        if (ids.size() == 1) return nameOf(ids.get(0));
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ids.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(nameOf(ids.get(i)));
+        }
+        return sb.toString();
+    }
+
+    private static String labelFor(List<Player> team) {
+        if (team.size() == 1) return team.get(0).getName();
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < team.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(team.get(i).getName());
+        }
+        return sb.toString();
+    }
+
+    private static List<UUID> toIds(List<Player> players) {
+        List<UUID> out = new ArrayList<>(players.size());
+        for (Player p : players) out.add(p.getUniqueId());
+        return out;
+    }
+
+    private static List<Player> onlinePlayersFor(List<UUID> ids) {
+        List<Player> out = new ArrayList<>(ids.size());
+        for (UUID id : ids) {
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) out.add(p);
+        }
+        return out;
+    }
+
+    private static boolean hasOnlinePlayerInTeam(List<UUID> team) {
+        for (UUID id : team) {
+            if (Bukkit.getPlayer(id) != null) return true;
+        }
+        return false;
+    }
+
     private void cancelTask(@Nullable BukkitTask t) {
         if (t != null) try { t.cancel(); } catch (IllegalStateException ignored) {}
     }
 
     private static final class PendingDuel {
-        final UUID a, b;
+        final List<UUID> teamA;
+        final List<UUID> teamB;
         final String kit;
         final int firstTo;
         final boolean useTimeLimit;
-        PendingDuel(UUID a, UUID b, String kit, int firstTo, boolean useTimeLimit) {
-            this.a = a; this.b = b; this.kit = kit; this.firstTo = firstTo; this.useTimeLimit = useTimeLimit;
+        PendingDuel(List<UUID> teamA, List<UUID> teamB, String kit, int firstTo, boolean useTimeLimit) {
+            this.teamA = List.copyOf(teamA);
+            this.teamB = List.copyOf(teamB);
+            this.kit = kit;
+            this.firstTo = firstTo;
+            this.useTimeLimit = useTimeLimit;
         }
     }
 }
