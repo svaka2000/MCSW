@@ -6,6 +6,7 @@ import com.samarth.duels.match.MatchState;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -18,6 +19,7 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.projectiles.ProjectileSource;
 
 public final class MatchListener implements Listener {
     private final JavaPlugin plugin;
@@ -78,10 +80,29 @@ public final class MatchListener implements Listener {
             e.setCancelled(true);
             return;
         }
-        if (e.getDamager() instanceof Player attacker) {
-            DuelMatch am = runner.matchOf(attacker.getUniqueId());
-            if (am == null || !am.id().equals(vm.id())) e.setCancelled(true);
+        Player attacker = resolveAttacker(e);
+        if (attacker == null) return;
+        DuelMatch am = runner.matchOf(attacker.getUniqueId());
+        // Different match (or attacker not in any match) → cancel.
+        if (am == null || !am.id().equals(vm.id())) {
+            e.setCancelled(true);
+            return;
         }
+        // Friendly fire — same team can't damage each other.
+        if (vm.teamOf(victim.getUniqueId()) == vm.teamOf(attacker.getUniqueId())
+            && !victim.getUniqueId().equals(attacker.getUniqueId())) {
+            e.setCancelled(true);
+        }
+    }
+
+    /** Resolve the human attacker behind direct hits AND projectile damage. */
+    private static @org.jetbrains.annotations.Nullable Player resolveAttacker(EntityDamageByEntityEvent e) {
+        if (e.getDamager() instanceof Player p) return p;
+        if (e.getDamager() instanceof Projectile pj) {
+            ProjectileSource shooter = pj.getShooter();
+            if (shooter instanceof Player p) return p;
+        }
+        return null;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
