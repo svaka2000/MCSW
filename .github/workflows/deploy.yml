@@ -60,18 +60,32 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload JARs to server (SFTP)
+      - name: Upload JARs to server (SFTP via curl)
         if: steps.check.outputs.skip == 'false'
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.MC_SERVER_HOST }}
-          username: ${{ secrets.MC_SERVER_USER }}
-          password: ${{ secrets.MC_SERVER_PASSWORD }}
-          port: ${{ secrets.MC_SERVER_PORT || 22 }}
-          source: "dist/*.jar"
-          target: ${{ secrets.MC_PLUGINS_PATH }}
-          strip_components: 1
-          overwrite: true
+        env:
+          HOST: ${{ secrets.MC_SERVER_HOST }}
+          USER: ${{ secrets.MC_SERVER_USER }}
+          PASS: ${{ secrets.MC_SERVER_PASSWORD }}
+          PORT: ${{ secrets.MC_SERVER_PORT }}
+          DEST: ${{ secrets.MC_PLUGINS_PATH }}
+        run: |
+          set -euo pipefail
+          # GravelHost (and most managed Minecraft hosts) expose SFTP but not the
+          # legacy SCP wire protocol that appleboy/scp-action uses. curl on the
+          # GitHub Actions runner is built with libssh2 and speaks SFTP directly,
+          # which is what these hosts actually accept.
+          DEST_CLEAN="${DEST%/}"
+          for f in dist/*.jar; do
+            name=$(basename "$f")
+            echo "→ Uploading $name to $HOST:$DEST_CLEAN/$name"
+            curl --silent --show-error --fail \
+                 --insecure \
+                 --user "$USER:$PASS" \
+                 --upload-file "$f" \
+                 "sftp://$HOST:$PORT$DEST_CLEAN/$name"
+            echo "  ✓ $name"
+          done
+          echo "All JARs uploaded."
 
       - name: Summary
         if: steps.check.outputs.skip == 'false'
