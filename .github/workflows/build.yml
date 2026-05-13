@@ -38,9 +38,13 @@ jobs:
       - name: Stage built JARs
         run: |
           mkdir -p dist
-          cp tourney/build/libs/Tourney-*.jar dist/Tourney.jar
-          cp duels/build/libs/Duels-*.jar dist/Duels.jar
-          cp aihelp/build/libs/AIHelp-*.jar dist/AIHelp.jar
+          # Use *-dev.jar — stats and kits also produce *-sources.jar via withSourcesJar(),
+          # which would make a wider glob ambiguous.
+          cp tourney/build/libs/Tourney-*-dev.jar dist/Tourney.jar
+          cp duels/build/libs/Duels-*-dev.jar dist/Duels.jar
+          cp aihelp/build/libs/AIHelp-*-dev.jar dist/AIHelp.jar
+          cp stats/build/libs/PvPTLStats-*-dev.jar dist/PvPTLStats.jar
+          cp kits/build/libs/PvPTLKits-*-dev.jar dist/PvPTLKits.jar
           ls -la dist/
 
       - name: Upload artifact bundle

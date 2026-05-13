@@ -40,10 +40,13 @@ jobs:
           chmod +x ./gradlew
           ./gradlew build --no-daemon
           mkdir -p dist
-          cp tourney/build/libs/Tourney-*.jar dist/Tourney.jar
-          cp duels/build/libs/Duels-*.jar dist/Duels.jar
-          cp aihelp/build/libs/AIHelp-*.jar dist/AIHelp.jar
-          cp stats/build/libs/PvPTLStats-*.jar dist/PvPTLStats.jar
+          # Use the *-dev.jar suffix specifically — stats and kits also build a
+          # *-sources.jar (via withSourcesJar()), which would make the glob ambiguous.
+          cp tourney/build/libs/Tourney-*-dev.jar dist/Tourney.jar
+          cp duels/build/libs/Duels-*-dev.jar dist/Duels.jar
+          cp aihelp/build/libs/AIHelp-*-dev.jar dist/AIHelp.jar
+          cp stats/build/libs/PvPTLStats-*-dev.jar dist/PvPTLStats.jar
+          cp kits/build/libs/PvPTLKits-*-dev.jar dist/PvPTLKits.jar
           ls -la dist/
 
       - name: Check deploy secrets are configured
