@@ -608,6 +608,8 @@ public final class MatchRunner {
             sb.resetScores(entry);
         }
 
+        applyTeamColors(sb, m);
+
         int needed = m.roundsNeeded();
         String ip = config.serverIp();
         String teamALabel = m.isTeamMatch()
@@ -635,6 +637,40 @@ public final class MatchRunner {
     private static void setLine(Objective obj, String entry, int scoreValue) {
         Score s = obj.getScore(entry);
         s.setScore(scoreValue);
+    }
+
+    /**
+     * Color team-A nameplates aqua, team-B red, and disable friendly collision so
+     * teammates can't body-block each other mid-fight. Visible only to players who
+     * have this match's scoreboard attached (the fighters themselves).
+     */
+    private static void applyTeamColors(Scoreboard sb, DuelMatch m) {
+        org.bukkit.scoreboard.Team teamA = sb.getTeam("duel_a");
+        if (teamA == null) {
+            teamA = sb.registerNewTeam("duel_a");
+            teamA.color(NamedTextColor.AQUA);
+            teamA.setAllowFriendlyFire(false);
+            teamA.setOption(org.bukkit.scoreboard.Team.Option.COLLISION_RULE,
+                org.bukkit.scoreboard.Team.OptionStatus.FOR_OTHER_TEAMS);
+        }
+        org.bukkit.scoreboard.Team teamB = sb.getTeam("duel_b");
+        if (teamB == null) {
+            teamB = sb.registerNewTeam("duel_b");
+            teamB.color(NamedTextColor.RED);
+            teamB.setAllowFriendlyFire(false);
+            teamB.setOption(org.bukkit.scoreboard.Team.Option.COLLISION_RULE,
+                org.bukkit.scoreboard.Team.OptionStatus.FOR_OTHER_TEAMS);
+        }
+        for (String entry : new ArrayList<>(teamA.getEntries())) teamA.removeEntry(entry);
+        for (String entry : new ArrayList<>(teamB.getEntries())) teamB.removeEntry(entry);
+        for (UUID id : m.teamA()) {
+            String name = nameOf(id);
+            if (!"?".equals(name)) teamA.addEntry(name);
+        }
+        for (UUID id : m.teamB()) {
+            String name = nameOf(id);
+            if (!"?".equals(name)) teamB.addEntry(name);
+        }
     }
 
     private static String truncate(String s, int max) {
