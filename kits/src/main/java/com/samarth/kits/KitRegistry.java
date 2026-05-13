@@ -2,12 +2,15 @@ package com.samarth.kits;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -95,7 +98,40 @@ public final class KitRegistry implements KitService {
         pi.setArmorContents(kit.armor());
         pi.setContents(kit.inventory());
         if (kit.offhand() != null) pi.setItemInOffHand(kit.offhand());
+        // Refresh own HUD (otherwise the wearer sometimes sees ghost-armor slots).
+        p.updateInventory();
+        // Broadcast equipment to other clients. Bukkit's setArmorContents() doesn't
+        // always send the equipment-change packet to nearby viewers (especially when
+        // the wearer was just teleported / respawned), which is what made the kit
+        // look like "no armor" from the opponent's POV. Doing it explicitly here
+        // forces a fresh equipment packet to land after the teleport.
+        broadcastEquipment(p);
         return true;
+    }
+
+    private static void broadcastEquipment(Player p) {
+        PlayerInventory pi = p.getInventory();
+        EnumMap<EquipmentSlot, ItemStack> slots = new EnumMap<>(EquipmentSlot.class);
+        slots.put(EquipmentSlot.HEAD, nullToAir(pi.getHelmet()));
+        slots.put(EquipmentSlot.CHEST, nullToAir(pi.getChestplate()));
+        slots.put(EquipmentSlot.LEGS, nullToAir(pi.getLeggings()));
+        slots.put(EquipmentSlot.FEET, nullToAir(pi.getBoots()));
+        slots.put(EquipmentSlot.HAND, nullToAir(pi.getItemInMainHand()));
+        slots.put(EquipmentSlot.OFF_HAND, nullToAir(pi.getItemInOffHand()));
+        for (Player viewer : Bukkit.getOnlinePlayers()) {
+            if (viewer.equals(p)) continue;
+            if (!viewer.getWorld().equals(p.getWorld())) continue;
+            try {
+                viewer.sendEquipmentChange(p, slots);
+            } catch (Throwable ignored) {
+                // Older Paper API or unrelated entity — silently skip; the next
+                // hide/show cycle from the match runner will refresh anyway.
+            }
+        }
+    }
+
+    private static ItemStack nullToAir(@Nullable ItemStack it) {
+        return it == null ? new ItemStack(Material.AIR) : it;
     }
 
     private static List<ItemStack> listOf(ItemStack[] arr) {
