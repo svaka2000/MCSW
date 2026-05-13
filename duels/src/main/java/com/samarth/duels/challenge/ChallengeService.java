@@ -3,8 +3,13 @@ package com.samarth.duels.challenge;
 import com.samarth.duels.config.DuelsConfig;
 import com.samarth.duels.kit.KitsBridge;
 import com.samarth.duels.match.MatchRunner;
+import com.samarth.duels.parties.PartiesBridge;
 import com.samarth.kits.KitService;
+import com.samarth.parties.Party;
+import com.samarth.parties.PartyService;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
@@ -35,6 +40,45 @@ public final class ChallengeService {
     }
 
     public void challenge(Player challenger, Player target, String kitName, int rounds, boolean useTimeLimit) {
+        sendChallenge(challenger, target, kitName, rounds, useTimeLimit, false);
+    }
+
+    /**
+     * Party-vs-party challenge. {@code challenger} and {@code target} must each be the leader of
+     * a party. Actual rosters are resolved when the target accepts (so members joining/leaving
+     * between challenge and accept is handled gracefully).
+     */
+    public void partyChallenge(Player challenger, Player target, String kitName, int rounds, boolean useTimeLimit) {
+        PartyService parties = PartiesBridge.tryGet();
+        if (parties == null) {
+            send(challenger, "<red>PvPTLParties not loaded — party duels unavailable.</red>");
+            return;
+        }
+        Party cp = parties.partyOf(challenger.getUniqueId());
+        if (cp == null || !cp.isLeader(challenger.getUniqueId())) {
+            send(challenger, "<red>You must be a party leader to send a party challenge. Run /party create first.</red>");
+            return;
+        }
+        Party tp = parties.partyOf(target.getUniqueId());
+        if (tp == null || !tp.isLeader(target.getUniqueId())) {
+            send(challenger, "<red>" + target.getName() + " is not a party leader.</red>");
+            return;
+        }
+        if (cp.id().equals(tp.id())) {
+            send(challenger, "<red>You're both in the same party — can't duel yourselves.</red>");
+            return;
+        }
+        int maxSize = config.maxTeamSize();
+        if (cp.size() > maxSize || tp.size() > maxSize) {
+            send(challenger, "<red>Arena only supports up to " + maxSize + "v" + maxSize
+                + " — your party has " + cp.size() + ", theirs has " + tp.size() + ".</red>");
+            return;
+        }
+        sendChallenge(challenger, target, kitName, rounds, useTimeLimit, true);
+    }
+
+    private void sendChallenge(Player challenger, Player target, String kitName,
+                               int rounds, boolean useTimeLimit, boolean party) {
         if (challenger.getUniqueId().equals(target.getUniqueId())) {
             send(challenger, "<red>You can't duel yourself.</red>");
             return;
@@ -52,7 +96,6 @@ public final class ChallengeService {
             send(challenger, "<red>One of you is already in a duel.</red>");
             return;
         }
-        // Cooldown
         long cooldownMs = (long) config.challengeCooldownSeconds() * 1000L;
         Long last = lastChallengeAt.get(challenger.getUniqueId());
         long now = System.currentTimeMillis();
@@ -63,20 +106,23 @@ public final class ChallengeService {
         }
 
         long expiry = now + (long) config.challengeTimeoutSeconds() * 1000L;
-        Challenge c = new Challenge(challenger.getUniqueId(), target.getUniqueId(), kitName, rounds, useTimeLimit, expiry);
+        Challenge c = new Challenge(challenger.getUniqueId(), target.getUniqueId(),
+            kitName, rounds, useTimeLimit, expiry, party);
         incoming.put(target.getUniqueId(), c);
         lastChallengeAt.put(challenger.getUniqueId(), now);
 
-        send(challenger, "<gray>Challenge sent to <yellow>" + target.getName() + "</yellow> — kit <aqua>" + kitName + "</aqua>, BO" + rounds + (useTimeLimit ? ", with time limit" : "") + ".</gray>");
+        String label = party ? "party duel" : "duel";
+        send(challenger, "<gray>Challenge sent to <yellow>" + target.getName()
+            + "</yellow> — kit <aqua>" + kitName + "</aqua>, first to " + rounds
+            + (useTimeLimit ? ", with time limit" : "") + (party ? " <gold>(party)</gold>" : "") + ".</gray>");
 
-        // Notify target with clickable [ACCEPT] / [DENY] buttons
         Component prefix = MM.deserialize(config.prefix());
         Component msg = Component.text()
             .append(Component.text(challenger.getName(), NamedTextColor.GOLD))
-            .append(Component.text(" challenged you to a duel ", NamedTextColor.GRAY))
+            .append(Component.text(" challenged you to a " + label + " ", NamedTextColor.GRAY))
             .append(Component.text("(", NamedTextColor.DARK_GRAY))
             .append(Component.text(kitName, NamedTextColor.AQUA))
-            .append(Component.text(", BO" + rounds + (useTimeLimit ? ", time limit" : ""), NamedTextColor.GRAY))
+            .append(Component.text(", first to " + rounds + (useTimeLimit ? ", time limit" : ""), NamedTextColor.GRAY))
             .append(Component.text(") ", NamedTextColor.DARK_GRAY))
             .append(Component.text("[ACCEPT]", NamedTextColor.GREEN, TextDecoration.BOLD)
                 .clickEvent(ClickEvent.runCommand("/duels accept"))
@@ -115,7 +161,75 @@ public final class ChallengeService {
             send(target, "<red>Challenger went offline.</red>");
             return;
         }
-        runner.start(challenger, target, c.kitName(), c.rounds(), c.useTimeLimit());
+        if (c.party()) {
+            acceptParty(target, challenger, c);
+        } else {
+            runner.start(challenger, target, c.kitName(), c.rounds(), c.useTimeLimit());
+        }
+    }
+
+    private void acceptParty(Player target, Player challenger, Challenge c) {
+        PartyService parties = PartiesBridge.tryGet();
+        if (parties == null) {
+            send(target, "<red>PvPTLParties is no longer loaded — can't start a party duel.</red>");
+            return;
+        }
+        Party cp = parties.partyOf(challenger.getUniqueId());
+        Party tp = parties.partyOf(target.getUniqueId());
+        if (cp == null || !cp.isLeader(challenger.getUniqueId())) {
+            send(target, "<red>Challenger is no longer a party leader.</red>");
+            send(challenger, "<red>You're no longer leading a party — challenge cancelled.</red>");
+            return;
+        }
+        if (tp == null || !tp.isLeader(target.getUniqueId())) {
+            send(target, "<red>You're no longer a party leader — challenge cancelled.</red>");
+            send(challenger, "<red>" + target.getName() + " is no longer a party leader.</red>");
+            return;
+        }
+        if (cp.id().equals(tp.id())) {
+            send(target, "<red>You can't duel your own party.</red>");
+            return;
+        }
+        List<Player> teamA = resolveOnlineMembers(cp);
+        List<Player> teamB = resolveOnlineMembers(tp);
+        if (teamA.size() != cp.size()) {
+            send(target, "<red>Challenger's party has offline members — can't start.</red>");
+            send(challenger, "<red>One of your party members is offline — match cancelled.</red>");
+            return;
+        }
+        if (teamB.size() != tp.size()) {
+            send(target, "<red>Your party has offline members — can't start.</red>");
+            send(challenger, "<red>" + target.getName() + "'s party has offline members — match cancelled.</red>");
+            return;
+        }
+        for (Player p : teamA) {
+            if (runner.isInMatch(p.getUniqueId())) {
+                send(target, "<red>" + p.getName() + " is already in a duel.</red>");
+                send(challenger, "<red>" + p.getName() + " is already in a duel.</red>");
+                return;
+            }
+        }
+        for (Player p : teamB) {
+            if (runner.isInMatch(p.getUniqueId())) {
+                send(target, "<red>" + p.getName() + " is already in a duel.</red>");
+                send(challenger, "<red>" + p.getName() + " is already in a duel.</red>");
+                return;
+            }
+        }
+        runner.start(teamA, teamB, c.kitName(), c.rounds(), c.useTimeLimit());
+    }
+
+    private static List<Player> resolveOnlineMembers(Party party) {
+        // Leader first (so they get slot 0 — the arena's "primary" spawn), then the rest.
+        List<Player> out = new ArrayList<>(party.size());
+        Player leader = Bukkit.getPlayer(party.leader());
+        if (leader != null) out.add(leader);
+        for (UUID id : party.members()) {
+            if (id.equals(party.leader())) continue;
+            Player p = Bukkit.getPlayer(id);
+            if (p != null) out.add(p);
+        }
+        return out;
     }
 
     public void deny(Player target) {

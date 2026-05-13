@@ -3,6 +3,7 @@ package com.samarth.duels;
 import com.samarth.duels.challenge.ChallengeService;
 import com.samarth.duels.commands.DuelCommand;
 import com.samarth.duels.commands.DuelsCommand;
+import com.samarth.duels.commands.PartyDuelCommand;
 import com.samarth.duels.config.DuelsConfig;
 import com.samarth.duels.listeners.MatchListener;
 import com.samarth.duels.listeners.NpcInteractionListener;
@@ -32,6 +33,7 @@ public final class DuelsPlugin extends JavaPlugin {
 
         bind("duels", new DuelsCommand(this));
         bind("duel", new DuelCommand(this));
+        bind("partyduel", new PartyDuelCommand(this));
 
         getServer().getPluginManager().registerEvents(new MatchListener(this, matches), this);
         getServer().getPluginManager().registerEvents(new NpcInteractionListener(queues, challenges, config), this);

@@ -219,6 +219,8 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/duels gui §7— open the kit/queue picker");
         sender.sendMessage("§e/duels info §7— show plugin status");
         sender.sendMessage("§e/duel <player> [kit] §7— challenge someone directly");
+        sender.sendMessage("§e/partyduel <player> §7— challenge another party leader (team-vs-team)");
+        sender.sendMessage("§e/party §7— manage parties (PvPTLParties)");
         sender.sendMessage("§6Admin:");
         sender.sendMessage("§e/duels setlobby §7— save current location as the lobby");
         sender.sendMessage("§e/duels setarena <a|b> [slot] §7— add or replace an arena spawn (omit slot to append)");

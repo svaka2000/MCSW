@@ -39,16 +39,23 @@ public final class DuelCustomizeHolder implements InventoryHolder {
     private final UUID target;
     private final String targetName;
     private final String kitName;
+    private final boolean party;
     private int rounds;
     private boolean useTimeLimit;
     @Nullable private Inventory inv;
 
     public DuelCustomizeHolder(UUID target, String targetName, String kitName, int rounds, boolean useTimeLimit) {
+        this(target, targetName, kitName, rounds, useTimeLimit, false);
+    }
+
+    public DuelCustomizeHolder(UUID target, String targetName, String kitName,
+                               int rounds, boolean useTimeLimit, boolean party) {
         this.target = target;
         this.targetName = targetName;
         this.kitName = kitName;
         this.rounds = rounds;
         this.useTimeLimit = useTimeLimit;
+        this.party = party;
     }
 
     public UUID target() { return target; }
@@ -56,12 +63,13 @@ public final class DuelCustomizeHolder implements InventoryHolder {
     public String kitName() { return kitName; }
     public int rounds() { return rounds; }
     public boolean useTimeLimit() { return useTimeLimit; }
+    public boolean party() { return party; }
     public void setRounds(int v) { this.rounds = v; }
     public void setUseTimeLimit(boolean v) { this.useTimeLimit = v; }
 
     public Inventory build() {
-        this.inv = Bukkit.createInventory(this, 27,
-            Component.text("Customize: " + kitName, NamedTextColor.AQUA));
+        String title = (party ? "Party Customize: " : "Customize: ") + kitName;
+        this.inv = Bukkit.createInventory(this, 27, Component.text(title, NamedTextColor.AQUA));
         populate();
         return inv;
     }

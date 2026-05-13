@@ -19,6 +19,7 @@ dependencies {
     // the PvPTLStats / PvPTLKits plugins loaded at server startup.
     compileOnly(project(":stats"))
     compileOnly(project(":kits"))
+    compileOnly(project(":parties"))
 }
 
 tasks {

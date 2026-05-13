@@ -22,21 +22,29 @@ import org.jetbrains.annotations.Nullable;
 public final class DuelSetupHolder implements InventoryHolder {
     private final UUID target;
     private final String targetName;
+    private final boolean party;
     @Nullable private Inventory inv;
 
     public DuelSetupHolder(UUID target, String targetName) {
+        this(target, targetName, false);
+    }
+
+    public DuelSetupHolder(UUID target, String targetName, boolean party) {
         this.target = target;
         this.targetName = targetName;
+        this.party = party;
     }
 
     public UUID target() { return target; }
     public String targetName() { return targetName; }
+    public boolean party() { return party; }
 
     public Inventory build(KitService kits) {
         List<String> names = kits.names();
         int rows = Math.max(1, Math.min(6, (names.size() + 8) / 9));
+        String title = party ? "Party Duel " + targetName : "Duel " + targetName;
         this.inv = Bukkit.createInventory(this, rows * 9,
-            Component.text("Duel " + targetName, NamedTextColor.AQUA));
+            Component.text(title, NamedTextColor.AQUA));
         for (int i = 0; i < names.size() && i < rows * 9; i++) {
             inv.setItem(i, kitIcon(names.get(i)));
         }

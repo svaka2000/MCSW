@@ -138,12 +138,16 @@ public final class NpcInteractionListener implements Listener {
             viewer.closeInventory();
             DuelCustomizeHolder cust = new DuelCustomizeHolder(
                 target.getUniqueId(), target.getName(), kitName,
-                config.defaultFirstTo(), false);
+                config.defaultFirstTo(), false, setup.party());
             viewer.openInventory(cust.build());
         } else {
             // Left-click — send with defaults (no time limit)
             viewer.closeInventory();
-            challenges.challenge(viewer, target, kitName, config.defaultFirstTo(), false);
+            if (setup.party()) {
+                challenges.partyChallenge(viewer, target, kitName, config.defaultFirstTo(), false);
+            } else {
+                challenges.challenge(viewer, target, kitName, config.defaultFirstTo(), false);
+            }
         }
     }
 
@@ -168,7 +172,11 @@ public final class NpcInteractionListener implements Listener {
                     viewer.sendMessage("§cTarget went offline.");
                     return;
                 }
-                challenges.challenge(viewer, target, cust.kitName(), cust.rounds(), cust.useTimeLimit());
+                if (cust.party()) {
+                    challenges.partyChallenge(viewer, target, cust.kitName(), cust.rounds(), cust.useTimeLimit());
+                } else {
+                    challenges.challenge(viewer, target, cust.kitName(), cust.rounds(), cust.useTimeLimit());
+                }
                 return;
             }
             default -> refresh = false;
