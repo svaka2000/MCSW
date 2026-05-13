@@ -99,8 +99,9 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
         int kitCount = kits == null ? 0 : kits.names().size();
         sender.sendMessage("§6=== Duels status ===");
         sender.sendMessage("§7Lobby: " + (c.lobby() == null ? "§c✗" : "§a✓ " + DuelsConfig.describe(c.lobby())));
-        sender.sendMessage("§7Arena A: " + (c.arenaA() == null ? "§c✗" : "§a✓ " + DuelsConfig.describe(c.arenaA())));
-        sender.sendMessage("§7Arena B: " + (c.arenaB() == null ? "§c✗" : "§a✓ " + DuelsConfig.describe(c.arenaB())));
+        sender.sendMessage("§7Side A spawns: §f" + c.spawnsA().size());
+        sender.sendMessage("§7Side B spawns: §f" + c.spawnsB().size());
+        sender.sendMessage("§7Max team size: §f" + c.maxTeamSize());
         sender.sendMessage("§7PvPTLKits: " + (kits == null ? "§cnot loaded" : "§aloaded"));
         sender.sendMessage("§7Kits saved: §f" + kitCount);
         sender.sendMessage("§7Default first-to: §f" + c.defaultFirstTo());
@@ -117,13 +118,63 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
     private void handleSetArena(CommandSender sender, String[] args) {
         if (!sender.hasPermission("duels.admin")) { sender.sendMessage("§cNo permission."); return; }
         if (!(sender instanceof Player p)) { sender.sendMessage("§cPlayers only."); return; }
-        if (args.length < 2 || !(args[1].equalsIgnoreCase("a") || args[1].equalsIgnoreCase("b"))) {
-            sender.sendMessage("§cUsage: /duels setarena <a|b>");
+        if (args.length < 2) {
+            sender.sendMessage("§7Usage:");
+            sender.sendMessage("§e/duels setarena <a|b> §7— append new spawn at your location");
+            sender.sendMessage("§e/duels setarena <a|b> <slot> §7— overwrite existing slot (0-indexed)");
+            sender.sendMessage("§e/duels setarena clear <a|b> §7— wipe all spawns on a side");
+            sender.sendMessage("§e/duels setarena list §7— list all spawns");
             return;
         }
-        char side = args[1].toLowerCase().charAt(0);
-        plugin.config().setArena(side, p.getLocation());
-        sender.sendMessage("§aArena side " + side + " saved.");
+        String first = args[1].toLowerCase();
+        if (first.equals("list")) {
+            handleArenaList(sender);
+            return;
+        }
+        if (first.equals("clear")) {
+            if (args.length < 3 || !(args[2].equalsIgnoreCase("a") || args[2].equalsIgnoreCase("b"))) {
+                sender.sendMessage("§cUsage: /duels setarena clear <a|b>");
+                return;
+            }
+            char side = args[2].toLowerCase().charAt(0);
+            plugin.config().clearSpawns(side);
+            sender.sendMessage("§aSide " + side + " spawns cleared.");
+            return;
+        }
+        if (!(first.equals("a") || first.equals("b"))) {
+            sender.sendMessage("§cFirst arg must be 'a', 'b', 'clear', or 'list'.");
+            return;
+        }
+        char side = first.charAt(0);
+        int slot = -1; // append by default
+        if (args.length >= 3) {
+            try {
+                slot = Integer.parseInt(args[2]);
+                if (slot < 0) { sender.sendMessage("§cSlot must be ≥ 0."); return; }
+            } catch (NumberFormatException ex) {
+                sender.sendMessage("§cSlot must be a number.");
+                return;
+            }
+        }
+        int written = plugin.config().setSpawn(side, slot, p.getLocation());
+        sender.sendMessage("§aSide " + side + " slot §f" + written + "§a saved at "
+            + DuelsConfig.describe(p.getLocation()) + ".");
+    }
+
+    private void handleArenaList(CommandSender sender) {
+        DuelsConfig c = plugin.config();
+        sender.sendMessage("§6=== Arena spawns ===");
+        var listA = c.spawnsA();
+        var listB = c.spawnsB();
+        sender.sendMessage("§7Side A (" + listA.size() + ")");
+        for (int i = 0; i < listA.size(); i++) {
+            sender.sendMessage("  §7slot " + i + ": §f" + DuelsConfig.describe(listA.get(i)));
+        }
+        sender.sendMessage("§7Side B (" + listB.size() + ")");
+        for (int i = 0; i < listB.size(); i++) {
+            sender.sendMessage("  §7slot " + i + ": §f" + DuelsConfig.describe(listB.get(i)));
+        }
+        sender.sendMessage("§7Max team size (smaller of the two): §f" + c.maxTeamSize());
     }
 
     private void handleTag(CommandSender sender, boolean tag) {
@@ -170,7 +221,8 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/duel <player> [kit] §7— challenge someone directly");
         sender.sendMessage("§6Admin:");
         sender.sendMessage("§e/duels setlobby §7— save current location as the lobby");
-        sender.sendMessage("§e/duels setarena <a|b> §7— save current location as arena spawn A or B");
+        sender.sendMessage("§e/duels setarena <a|b> [slot] §7— add or replace an arena spawn (omit slot to append)");
+        sender.sendMessage("§e/duels setarena clear <a|b> §7— wipe a side; §e/duels setarena list §7— list spawns");
         sender.sendMessage("§e/duels tagentity §7— mark the entity you're looking at as a queue NPC");
         sender.sendMessage("§e/duels untagentity §7— remove that tag");
         sender.sendMessage("§e/duels reload §7— reload duels config");
@@ -187,6 +239,9 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
             return kits == null ? Arrays.asList() : kits.names();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("setarena")) {
+            return Arrays.asList("a", "b", "clear", "list");
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("setarena") && args[1].equalsIgnoreCase("clear")) {
             return Arrays.asList("a", "b");
         }
         return Collections.emptyList();

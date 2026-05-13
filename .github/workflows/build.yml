@@ -45,6 +45,7 @@ jobs:
           cp aihelp/build/libs/AIHelp-*-dev.jar dist/AIHelp.jar
           cp stats/build/libs/PvPTLStats-*-dev.jar dist/PvPTLStats.jar
           cp kits/build/libs/PvPTLKits-*-dev.jar dist/PvPTLKits.jar
+          cp parties/build/libs/PvPTLParties-*-dev.jar dist/PvPTLParties.jar
           ls -la dist/
 
       - name: Upload artifact bundle

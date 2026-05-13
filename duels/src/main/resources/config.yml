@@ -34,8 +34,14 @@ server:
 locations:
   lobby: null
   arena:
-    a: null
-    b: null
+    # Multi-spawn list per side. /duels setarena <a|b> [slot] manages these.
+    # For a 1v1 arena, set one spawn per side. For 2v2, two per side. 3v3, three. Etc.
+    spawns_a: []
+    spawns_b: []
+    # Legacy single-spawn keys (kept for backwards compatibility with old configs).
+    # When populated, they're auto-imported into spawns_a / spawns_b at first reload.
+    # a: null
+    # b: null
 
 # Kits are populated by /duelkit save.
 kits: {}
