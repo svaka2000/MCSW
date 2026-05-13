@@ -63,20 +63,34 @@ public final class NpcInteractionListener implements Listener {
     }
 
     /**
-     * Right-clicking the tagged leave-queue barrier (anywhere in the player's inventory)
-     * dequeues the player. The barrier is given to queued players in their hotbar.
+     * Right-click handlers for the two tagged hotbar items duels gives out:
+     *   - leave-queue BARRIER → dequeue
+     *   - requeue PAPER → enqueue for the kit stored in PDC
      */
     @EventHandler
     public void onInteractItem(PlayerInteractEvent e) {
         Action a = e.getAction();
         if (a != Action.RIGHT_CLICK_AIR && a != Action.RIGHT_CLICK_BLOCK) return;
         ItemStack item = e.getItem();
-        if (item == null || item.getType() != Material.BARRIER) return;
+        if (item == null) return;
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return;
-        if (!meta.getPersistentDataContainer().has(queues.leaveQueueKey(), PersistentDataType.BYTE)) return;
-        e.setCancelled(true);
-        queues.dequeue(e.getPlayer(), true);
+        var pdc = meta.getPersistentDataContainer();
+
+        if (item.getType() == Material.BARRIER
+            && pdc.has(queues.leaveQueueKey(), PersistentDataType.BYTE)) {
+            e.setCancelled(true);
+            queues.dequeue(e.getPlayer(), true);
+            return;
+        }
+        if (item.getType() == Material.PAPER
+            && pdc.has(queues.requeueKey(), PersistentDataType.STRING)) {
+            String kitName = pdc.get(queues.requeueKey(), PersistentDataType.STRING);
+            if (kitName == null || kitName.isBlank()) return;
+            e.setCancelled(true);
+            queues.removeRequeueItem(e.getPlayer());
+            queues.enqueue(e.getPlayer(), kitName);
+        }
     }
 
     @EventHandler

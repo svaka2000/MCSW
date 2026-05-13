@@ -44,6 +44,8 @@ public final class MatchRunner {
 
     private final JavaPlugin plugin;
     private final DuelsConfig config;
+    /** Set via setter from DuelsPlugin after both services are constructed. */
+    @Nullable private com.samarth.duels.queue.QueueService queues;
 
     private final Map<UUID, DuelMatch> matchByPlayer = new HashMap<>();
     @Nullable private DuelMatch arenaInUse;
@@ -54,6 +56,11 @@ public final class MatchRunner {
     public MatchRunner(JavaPlugin plugin, DuelsConfig config) {
         this.plugin = plugin;
         this.config = config;
+    }
+
+    /** Wire-up done after construction so MatchRunner can hand the requeue item to players. */
+    public void setQueues(com.samarth.duels.queue.QueueService queues) {
+        this.queues = queues;
     }
 
     public boolean isInMatch(UUID id) { return matchByPlayer.containsKey(id); }
@@ -317,6 +324,21 @@ public final class MatchRunner {
 
         // Entity tracker refresh, like Tourney teardown — prevents post-match desync
         refreshPlayerVisibility(List.of(m.playerA(), m.playerB()));
+
+        // Give each finished player a "Requeue: <kit>" paper after they've settled.
+        // 20-tick delay so any in-flight respawn / lobby teleport (dead-loser path)
+        // completes first — otherwise the paper gets nuked by the inventory restore.
+        if (queues != null) {
+            UUID aId = m.playerA();
+            UUID bId = m.playerB();
+            String kit = m.kitName();
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                Player ap = Bukkit.getPlayer(aId);
+                Player bp = Bukkit.getPlayer(bId);
+                if (ap != null && !isInMatch(aId)) queues.giveRequeueItem(ap, kit);
+                if (bp != null && !isInMatch(bId)) queues.giveRequeueItem(bp, kit);
+            }, 20L);
+        }
 
         // Pump the waiting queue (if any other duels were waiting on this arena)
         Bukkit.getScheduler().runTaskLater(plugin, this::startNextWaiting, 60L);

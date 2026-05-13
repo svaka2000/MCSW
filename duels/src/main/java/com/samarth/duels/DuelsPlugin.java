@@ -27,6 +27,7 @@ public final class DuelsPlugin extends JavaPlugin {
 
         this.matches = new MatchRunner(this, config);
         this.queues = new QueueService(this, config, matches);
+        this.matches.setQueues(queues); // wire-back for post-match requeue item
         this.challenges = new ChallengeService(this, config, matches);
 
         bind("duels", new DuelsCommand(this));

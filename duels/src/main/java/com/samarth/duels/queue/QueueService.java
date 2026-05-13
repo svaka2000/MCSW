@@ -36,18 +36,23 @@ public final class QueueService {
 
     private final Map<String, Deque<UUID>> queuesByKit = new HashMap<>();
     private final Map<UUID, String> kitByPlayer = new HashMap<>();
-    /** Original slot-8 contents we displaced when giving the leave barrier. */
+    /** Original slot-8 contents we displaced when giving the leave-queue barrier. */
     private final Map<UUID, ItemStack> savedHotbarSlot = new HashMap<>();
+    /** Original slot-8 contents we displaced when giving the requeue paper. */
+    private final Map<UUID, ItemStack> savedRequeueSlot = new HashMap<>();
     private final NamespacedKey leaveQueueKey;
+    private final NamespacedKey requeueKey;
 
     public QueueService(JavaPlugin plugin, DuelsConfig config, MatchRunner runner) {
         this.plugin = plugin;
         this.config = config;
         this.runner = runner;
         this.leaveQueueKey = new NamespacedKey(plugin, "leave_queue_item");
+        this.requeueKey = new NamespacedKey(plugin, "requeue_kit");
     }
 
     public NamespacedKey leaveQueueKey() { return leaveQueueKey; }
+    public NamespacedKey requeueKey() { return requeueKey; }
 
     public void enqueue(Player p, String kitName) {
         if (kitName == null || kitName.isBlank()) {
@@ -75,6 +80,9 @@ public final class QueueService {
         q.addLast(p.getUniqueId());
         kitByPlayer.put(p.getUniqueId(), kitName.toLowerCase());
 
+        // If they had a lingering requeue paper from a previous duel, clean it up
+        // before we drop the leave-queue barrier in the same slot.
+        removeRequeueItem(p);
         giveLeaveBarrier(p);
 
         send(p, config.msg("queued")
@@ -166,6 +174,64 @@ public final class QueueService {
                 }
             }
         }
+    }
+
+    // ----- requeue item (given at duel end) -----
+
+    /** Place a "Requeue: &lt;kit&gt;" paper in the player's hotbar. Right-click queues them again. */
+    public void giveRequeueItem(Player p, String kitName) {
+        // If anything tagged is already in slot 8 (leave-queue or stale requeue), wipe it first.
+        removeRequeueItem(p);
+        PlayerInventory inv = p.getInventory();
+        ItemStack existing = inv.getItem(LEAVE_BARRIER_SLOT);
+        if (existing != null && existing.getType() != Material.AIR) {
+            savedRequeueSlot.put(p.getUniqueId(), existing.clone());
+        } else {
+            savedRequeueSlot.put(p.getUniqueId(), new ItemStack(Material.AIR));
+        }
+        inv.setItem(LEAVE_BARRIER_SLOT, buildRequeueItem(kitName));
+    }
+
+    public void removeRequeueItem(Player p) {
+        PlayerInventory inv = p.getInventory();
+        // Strip any tagged requeue items wherever the player may have moved them.
+        for (int i = 0; i < inv.getSize(); i++) {
+            ItemStack item = inv.getItem(i);
+            if (item == null) continue;
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null && meta.getPersistentDataContainer().has(requeueKey, PersistentDataType.STRING)) {
+                inv.setItem(i, null);
+            }
+        }
+        ItemStack saved = savedRequeueSlot.remove(p.getUniqueId());
+        if (saved != null && saved.getType() != Material.AIR) {
+            if (inv.getItem(LEAVE_BARRIER_SLOT) == null) {
+                inv.setItem(LEAVE_BARRIER_SLOT, saved);
+            } else {
+                Map<Integer, ItemStack> overflow = inv.addItem(saved);
+                for (ItemStack drop : overflow.values()) {
+                    p.getWorld().dropItemNaturally(p.getLocation(), drop);
+                }
+            }
+        }
+    }
+
+    private ItemStack buildRequeueItem(String kitName) {
+        ItemStack it = new ItemStack(Material.PAPER);
+        ItemMeta meta = it.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Component.text("Requeue: " + kitName,
+                NamedTextColor.GREEN, TextDecoration.BOLD)
+                .decoration(TextDecoration.ITALIC, false));
+            meta.lore(java.util.Arrays.asList(
+                Component.text("Right-click to queue for " + kitName + " again",
+                    NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                Component.text("Disappears when you start another duel",
+                    NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false)));
+            meta.getPersistentDataContainer().set(requeueKey, PersistentDataType.STRING, kitName);
+            it.setItemMeta(meta);
+        }
+        return it;
     }
 
     private ItemStack buildLeaveBarrier() {
