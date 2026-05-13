@@ -4,7 +4,7 @@ main: com.samarth.duels.DuelsPlugin
 api-version: '1.21'
 authors: [Samarth, Weilin]
 description: PvPTL Duels — 1v1 duels with queues, parties, custom kits
-softdepend: [PvPTLStats]
+softdepend: [PvPTLStats, PvPTLKits]
 
 commands:
   duels:
@@ -13,10 +13,8 @@ commands:
   duel:
     description: Challenge a player to a duel
     usage: /duel <player> [kit]
-  duelkit:
-    description: Manage duel kits (operators)
-    aliases: [dkit]
-    usage: /duelkit <save|list|delete|give|reload> [name]
+  # /duelkit removed in favor of /kitsave from PvPTLKits — the single source of truth
+  # for kits shared across Tourney and Duels.
 
 permissions:
   duels.use:

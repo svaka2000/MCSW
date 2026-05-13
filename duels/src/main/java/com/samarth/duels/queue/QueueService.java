@@ -1,8 +1,9 @@
 package com.samarth.duels.queue;
 
 import com.samarth.duels.config.DuelsConfig;
-import com.samarth.duels.kit.KitRegistry;
+import com.samarth.duels.kit.KitsBridge;
 import com.samarth.duels.match.MatchRunner;
+import com.samarth.kits.KitService;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Deque;
@@ -31,7 +32,6 @@ public final class QueueService {
 
     private final JavaPlugin plugin;
     private final DuelsConfig config;
-    private final KitRegistry kits;
     private final MatchRunner runner;
 
     private final Map<String, Deque<UUID>> queuesByKit = new HashMap<>();
@@ -40,10 +40,9 @@ public final class QueueService {
     private final Map<UUID, ItemStack> savedHotbarSlot = new HashMap<>();
     private final NamespacedKey leaveQueueKey;
 
-    public QueueService(JavaPlugin plugin, DuelsConfig config, KitRegistry kits, MatchRunner runner) {
+    public QueueService(JavaPlugin plugin, DuelsConfig config, MatchRunner runner) {
         this.plugin = plugin;
         this.config = config;
-        this.kits = kits;
         this.runner = runner;
         this.leaveQueueKey = new NamespacedKey(plugin, "leave_queue_item");
     }
@@ -55,8 +54,13 @@ public final class QueueService {
             send(p, "<red>You must specify a kit. Try /duels gui or /duels queue <kit>.</red>");
             return;
         }
+        KitService kits = KitsBridge.tryGet();
+        if (kits == null) {
+            send(p, "<red>PvPTLKits not loaded — duels cannot run.</red>");
+            return;
+        }
         if (kits.get(kitName) == null) {
-            send(p, "<red>Kit '" + kitName + "' doesn't exist. Use /duelkit list to see available kits.</red>");
+            send(p, "<red>Kit '" + kitName + "' doesn't exist. Use /kitlist to see available kits.</red>");
             return;
         }
         if (runner.isInMatch(p.getUniqueId())) {

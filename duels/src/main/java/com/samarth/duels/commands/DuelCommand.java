@@ -46,13 +46,18 @@ public final class DuelCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("§cOne of you is already in a duel.");
             return true;
         }
-        List<String> kitNames = plugin.kits().names();
+        com.samarth.kits.KitService kits = com.samarth.duels.kit.KitsBridge.tryGet();
+        if (kits == null) {
+            sender.sendMessage("§cPvPTLKits plugin not loaded — duels cannot run.");
+            return true;
+        }
+        List<String> kitNames = kits.names();
         if (kitNames.isEmpty()) {
-            sender.sendMessage("§cNo kits saved yet. An op needs to run /duelkit save <name>.");
+            sender.sendMessage("§cNo kits saved yet. An op needs to run /kitsave <name>.");
             return true;
         }
         DuelSetupHolder holder = new DuelSetupHolder(target.getUniqueId(), target.getName());
-        Inventory inv = holder.build(plugin.kits());
+        Inventory inv = holder.build(kits);
         p.openInventory(inv);
         return true;
     }

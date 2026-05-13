@@ -1,6 +1,6 @@
 package com.samarth.duels.ui;
 
-import com.samarth.duels.kit.KitRegistry;
+import com.samarth.kits.KitService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -32,7 +32,7 @@ public final class DuelSetupHolder implements InventoryHolder {
     public UUID target() { return target; }
     public String targetName() { return targetName; }
 
-    public Inventory build(KitRegistry kits) {
+    public Inventory build(KitService kits) {
         List<String> names = kits.names();
         int rows = Math.max(1, Math.min(6, (names.size() + 8) / 9));
         this.inv = Bukkit.createInventory(this, rows * 9,

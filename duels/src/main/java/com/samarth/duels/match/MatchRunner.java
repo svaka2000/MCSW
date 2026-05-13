@@ -1,8 +1,8 @@
 package com.samarth.duels.match;
 
 import com.samarth.duels.config.DuelsConfig;
-import com.samarth.duels.kit.Kit;
-import com.samarth.duels.kit.KitRegistry;
+import com.samarth.duels.kit.KitsBridge;
+import com.samarth.kits.KitService;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -44,7 +44,6 @@ public final class MatchRunner {
 
     private final JavaPlugin plugin;
     private final DuelsConfig config;
-    private final KitRegistry kits;
 
     private final Map<UUID, DuelMatch> matchByPlayer = new HashMap<>();
     @Nullable private DuelMatch arenaInUse;
@@ -52,10 +51,9 @@ public final class MatchRunner {
     /** Player UUIDs that finished a match while dead — when they respawn, teleport here. */
     private final Map<UUID, Location> postMatchTeleport = new HashMap<>();
 
-    public MatchRunner(JavaPlugin plugin, DuelsConfig config, KitRegistry kits) {
+    public MatchRunner(JavaPlugin plugin, DuelsConfig config) {
         this.plugin = plugin;
         this.config = config;
-        this.kits = kits;
     }
 
     public boolean isInMatch(UUID id) { return matchByPlayer.containsKey(id); }
@@ -69,8 +67,13 @@ public final class MatchRunner {
             send(b, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
             return;
         }
-        Kit kit = kits.get(kitName);
-        if (kit == null) {
+        KitService kits = KitsBridge.tryGet();
+        if (kits == null) {
+            send(a, "<red>PvPTLKits not loaded — duels cannot run.</red>");
+            send(b, "<red>PvPTLKits not loaded — duels cannot run.</red>");
+            return;
+        }
+        if (kits.get(kitName) == null) {
             send(a, "<red>Kit '" + kitName + "' doesn't exist.</red>");
             send(b, "<red>Kit '" + kitName + "' doesn't exist.</red>");
             return;
@@ -95,8 +98,8 @@ public final class MatchRunner {
         send(a, config.msg("match-found"));
         send(b, config.msg("match-found"));
 
-        saveAndPrepare(a, kit, config.arenaA(), m);
-        saveAndPrepare(b, kit, config.arenaB(), m);
+        saveAndPrepare(a, kitName, config.arenaA(), m);
+        saveAndPrepare(b, kitName, config.arenaB(), m);
 
         Component prep = MM.deserialize(config.msg("match-prep"));
         Component subA = Component.text("vs " + b.getName());
@@ -116,17 +119,17 @@ public final class MatchRunner {
         scheduleFreeze(m, true);
     }
 
-    private void saveAndPrepare(Player p, Kit kit, Location spawn, DuelMatch m) {
+    private void saveAndPrepare(Player p, String kitName, Location spawn, DuelMatch m) {
         PlayerInventory pi = p.getInventory();
         m.savedInventory().put(p.getUniqueId(), pi.getContents().clone());
         m.savedArmor().put(p.getUniqueId(), pi.getArmorContents().clone());
         m.savedOffhand().put(p.getUniqueId(), pi.getItemInOffHand().clone());
         m.savedLocation().put(p.getUniqueId(), p.getLocation());
         m.savedGameMode().put(p.getUniqueId(), p.getGameMode());
-        prepareFighter(p, kit, spawn);
+        prepareFighter(p, kitName, spawn);
     }
 
-    private void prepareFighter(Player p, Kit kit, Location spawn) {
+    private void prepareFighter(Player p, String kitName, Location spawn) {
         // Pre-load the destination chunk so the teleport lands in a fully synced area.
         if (spawn.getWorld() != null) {
             try { spawn.getChunk(); } catch (Throwable ignored) {}
@@ -138,7 +141,8 @@ public final class MatchRunner {
         p.setSaturation(0f);
         p.setFireTicks(0);
         for (PotionEffect pe : p.getActivePotionEffects()) p.removePotionEffect(pe.getType());
-        kits.equip(kit, p);
+        KitService kits = KitsBridge.tryGet();
+        if (kits != null) kits.equip(kitName, p);
     }
 
     private void scheduleFreeze(DuelMatch m, boolean initialStart) {
@@ -271,10 +275,8 @@ public final class MatchRunner {
         Player a = Bukkit.getPlayer(m.playerA());
         Player b = Bukkit.getPlayer(m.playerB());
         if (a == null || b == null) return;
-        Kit kit = kits.get(m.kitName());
-        if (kit == null) return;
-        prepareFighter(a, kit, config.arenaA());
-        prepareFighter(b, kit, config.arenaB());
+        prepareFighter(a, m.kitName(), config.arenaA());
+        prepareFighter(b, m.kitName(), config.arenaB());
         Component prep = MM.deserialize(config.msg("match-prep"));
         a.showTitle(Title.title(prep, Component.text("Next round…"), Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));
         b.showTitle(Title.title(prep, Component.text("Next round…"), Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofMillis(200))));

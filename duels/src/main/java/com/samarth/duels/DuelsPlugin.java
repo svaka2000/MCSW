@@ -3,9 +3,7 @@ package com.samarth.duels;
 import com.samarth.duels.challenge.ChallengeService;
 import com.samarth.duels.commands.DuelCommand;
 import com.samarth.duels.commands.DuelsCommand;
-import com.samarth.duels.commands.KitCommand;
 import com.samarth.duels.config.DuelsConfig;
-import com.samarth.duels.kit.KitRegistry;
 import com.samarth.duels.listeners.MatchListener;
 import com.samarth.duels.listeners.NpcInteractionListener;
 import com.samarth.duels.match.MatchRunner;
@@ -16,7 +14,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class DuelsPlugin extends JavaPlugin {
 
     private DuelsConfig config;
-    private KitRegistry kits;
     private MatchRunner matches;
     private QueueService queues;
     private ChallengeService challenges;
@@ -27,21 +24,21 @@ public final class DuelsPlugin extends JavaPlugin {
 
         this.config = new DuelsConfig(this);
         config.reload();
-        this.kits = new KitRegistry(this);
-        kits.loadAll();
 
-        this.matches = new MatchRunner(this, config, kits);
-        this.queues = new QueueService(this, config, kits, matches);
-        this.challenges = new ChallengeService(this, config, kits, matches);
+        this.matches = new MatchRunner(this, config);
+        this.queues = new QueueService(this, config, matches);
+        this.challenges = new ChallengeService(this, config, matches);
 
         bind("duels", new DuelsCommand(this));
         bind("duel", new DuelCommand(this));
-        bind("duelkit", new KitCommand(this, kits));
 
         getServer().getPluginManager().registerEvents(new MatchListener(this, matches), this);
-        getServer().getPluginManager().registerEvents(new NpcInteractionListener(kits, queues, challenges, config), this);
+        getServer().getPluginManager().registerEvents(new NpcInteractionListener(queues, challenges, config), this);
 
         getLogger().info("Duels enabled. Run /duels info to check setup.");
+        if (getServer().getPluginManager().getPlugin("PvPTLKits") == null) {
+            getLogger().warning("PvPTLKits is NOT loaded — duels cannot run without it. Install PvPTLKits.");
+        }
     }
 
     @Override
@@ -50,7 +47,6 @@ public final class DuelsPlugin extends JavaPlugin {
     }
 
     public DuelsConfig config() { return config; }
-    public KitRegistry kits() { return kits; }
     public MatchRunner matches() { return matches; }
     public QueueService queues() { return queues; }
     public ChallengeService challenges() { return challenges; }

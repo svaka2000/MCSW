@@ -2,11 +2,12 @@ package com.samarth.duels.listeners;
 
 import com.samarth.duels.challenge.ChallengeService;
 import com.samarth.duels.config.DuelsConfig;
-import com.samarth.duels.kit.KitRegistry;
+import com.samarth.duels.kit.KitsBridge;
 import com.samarth.duels.queue.QueueService;
 import com.samarth.duels.ui.DuelCustomizeHolder;
 import com.samarth.duels.ui.DuelSetupHolder;
 import com.samarth.duels.ui.QueueGui;
+import com.samarth.kits.KitService;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
@@ -36,14 +37,12 @@ import org.bukkit.persistence.PersistentDataType;
 public final class NpcInteractionListener implements Listener {
     public static final String QUEUE_NPC_TAG = "duels_queue_npc";
 
-    private final KitRegistry kits;
     private final QueueService queues;
     private final ChallengeService challenges;
     private final DuelsConfig config;
 
-    public NpcInteractionListener(KitRegistry kits, QueueService queues,
+    public NpcInteractionListener(QueueService queues,
                                   ChallengeService challenges, DuelsConfig config) {
-        this.kits = kits;
         this.queues = queues;
         this.challenges = challenges;
         this.config = config;
@@ -53,6 +52,12 @@ public final class NpcInteractionListener implements Listener {
     public void onInteract(PlayerInteractEntityEvent e) {
         Entity target = e.getRightClicked();
         if (!target.getScoreboardTags().contains(QUEUE_NPC_TAG)) return;
+        KitService kits = KitsBridge.tryGet();
+        if (kits == null) {
+            e.getPlayer().sendMessage("§cPvPTLKits not loaded — duels disabled.");
+            e.setCancelled(true);
+            return;
+        }
         e.setCancelled(true);
         QueueGui.open(e.getPlayer(), kits, queues);
     }
@@ -105,7 +110,8 @@ public final class NpcInteractionListener implements Listener {
         Component nameComp = meta.displayName();
         if (nameComp == null) return;
         String kitName = PlainTextComponentSerializer.plainText().serialize(nameComp);
-        if (kits.get(kitName) == null) return;
+        KitService kits = KitsBridge.tryGet();
+        if (kits == null || kits.get(kitName) == null) return;
 
         Player target = Bukkit.getPlayer(setup.target());
         if (target == null) {
@@ -170,7 +176,8 @@ public final class NpcInteractionListener implements Listener {
             viewer.closeInventory();
             return;
         }
-        if (kits.get(name) == null) return;
+        KitService kits = KitsBridge.tryGet();
+        if (kits == null || kits.get(name) == null) return;
         viewer.closeInventory();
         queues.enqueue(viewer, name);
     }

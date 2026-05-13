@@ -1,8 +1,9 @@
 package com.samarth.duels.challenge;
 
 import com.samarth.duels.config.DuelsConfig;
-import com.samarth.duels.kit.KitRegistry;
+import com.samarth.duels.kit.KitsBridge;
 import com.samarth.duels.match.MatchRunner;
+import com.samarth.kits.KitService;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -22,22 +23,25 @@ public final class ChallengeService {
 
     private final JavaPlugin plugin;
     private final DuelsConfig config;
-    private final KitRegistry kits;
     private final MatchRunner runner;
     private final Map<UUID, Challenge> incoming = new HashMap<>();
     private final Map<UUID, BukkitTask> expirations = new HashMap<>();
     private final Map<UUID, Long> lastChallengeAt = new HashMap<>();
 
-    public ChallengeService(JavaPlugin plugin, DuelsConfig config, KitRegistry kits, MatchRunner runner) {
+    public ChallengeService(JavaPlugin plugin, DuelsConfig config, MatchRunner runner) {
         this.plugin = plugin;
         this.config = config;
-        this.kits = kits;
         this.runner = runner;
     }
 
     public void challenge(Player challenger, Player target, String kitName, int rounds, boolean useTimeLimit) {
         if (challenger.getUniqueId().equals(target.getUniqueId())) {
             send(challenger, "<red>You can't duel yourself.</red>");
+            return;
+        }
+        KitService kits = KitsBridge.tryGet();
+        if (kits == null) {
+            send(challenger, "<red>PvPTLKits not loaded — duels cannot run.</red>");
             return;
         }
         if (kits.get(kitName) == null) {

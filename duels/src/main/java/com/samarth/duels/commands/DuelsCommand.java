@@ -51,11 +51,16 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
 
     private void handleQueue(CommandSender sender, String[] args) {
         if (!(sender instanceof Player p)) { sender.sendMessage("§cPlayers only."); return; }
+        com.samarth.kits.KitService kits = com.samarth.duels.kit.KitsBridge.tryGet();
+        if (kits == null) {
+            sender.sendMessage("§cPvPTLKits plugin not loaded — duels cannot run.");
+            return;
+        }
         String kit = args.length >= 2 ? args[1] : plugin.config().defaultKit();
         if (kit == null || kit.isBlank()) {
-            List<String> names = plugin.kits().names();
+            List<String> names = kits.names();
             if (names.isEmpty()) {
-                sender.sendMessage("§cNo kits saved. Ask an op to run /duelkit save <name>.");
+                sender.sendMessage("§cNo kits saved. Ask an op to run /kitsave <name>.");
                 return;
             }
             kit = names.get(0);
@@ -80,16 +85,24 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
 
     private void handleGui(CommandSender sender) {
         if (!(sender instanceof Player p)) { sender.sendMessage("§cPlayers only."); return; }
-        QueueGui.open(p, plugin.kits(), plugin.queues());
+        com.samarth.kits.KitService kits = com.samarth.duels.kit.KitsBridge.tryGet();
+        if (kits == null) {
+            sender.sendMessage("§cPvPTLKits plugin not loaded — duels cannot run.");
+            return;
+        }
+        QueueGui.open(p, kits, plugin.queues());
     }
 
     private void handleInfo(CommandSender sender) {
         DuelsConfig c = plugin.config();
+        com.samarth.kits.KitService kits = com.samarth.duels.kit.KitsBridge.tryGet();
+        int kitCount = kits == null ? 0 : kits.names().size();
         sender.sendMessage("§6=== Duels status ===");
         sender.sendMessage("§7Lobby: " + (c.lobby() == null ? "§c✗" : "§a✓ " + DuelsConfig.describe(c.lobby())));
         sender.sendMessage("§7Arena A: " + (c.arenaA() == null ? "§c✗" : "§a✓ " + DuelsConfig.describe(c.arenaA())));
         sender.sendMessage("§7Arena B: " + (c.arenaB() == null ? "§c✗" : "§a✓ " + DuelsConfig.describe(c.arenaB())));
-        sender.sendMessage("§7Kits saved: §f" + plugin.kits().names().size());
+        sender.sendMessage("§7PvPTLKits: " + (kits == null ? "§cnot loaded" : "§aloaded"));
+        sender.sendMessage("§7Kits saved: §f" + kitCount);
         sender.sendMessage("§7Default first-to: §f" + c.defaultFirstTo());
         sender.sendMessage("§7Arena busy: " + (plugin.matches().isArenaBusy() ? "§ayes" : "§7no"));
     }
@@ -134,8 +147,9 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission("duels.admin")) { sender.sendMessage("§cNo permission."); return; }
         plugin.reloadConfig();
         plugin.config().reload();
-        plugin.kits().loadAll();
-        sender.sendMessage("§aConfig + kits reloaded.");
+        // Kits live in the PvPTLKits plugin now — tell the user how to reload them if needed.
+        sender.sendMessage("§aDuels config reloaded.");
+        sender.sendMessage("§7(Kits are managed by PvPTLKits — run §e/kitreload§7 to reload them.)");
     }
 
     private @org.jetbrains.annotations.Nullable Entity lookAtEntity(Player p, double maxDistance) {
@@ -159,8 +173,8 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/duels setarena <a|b> §7— save current location as arena spawn A or B");
         sender.sendMessage("§e/duels tagentity §7— mark the entity you're looking at as a queue NPC");
         sender.sendMessage("§e/duels untagentity §7— remove that tag");
-        sender.sendMessage("§e/duels reload §7— reload config + kits");
-        sender.sendMessage("§e/duelkit save <name> §7— save your inventory as a kit");
+        sender.sendMessage("§e/duels reload §7— reload duels config");
+        sender.sendMessage("§e/kitsave <name> §7— save your inventory as a kit (PvPTLKits)");
     }
 
     @Override
@@ -169,7 +183,8 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
             return Arrays.asList("queue", "leave", "accept", "deny", "gui", "info", "setlobby", "setarena", "tagentity", "untagentity", "reload", "help");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("queue")) {
-            return plugin.kits().names();
+            com.samarth.kits.KitService kits = com.samarth.duels.kit.KitsBridge.tryGet();
+            return kits == null ? Arrays.asList() : kits.names();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("setarena")) {
             return Arrays.asList("a", "b");

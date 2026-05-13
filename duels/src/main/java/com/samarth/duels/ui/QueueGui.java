@@ -1,8 +1,7 @@
 package com.samarth.duels.ui;
 
-import com.samarth.duels.kit.Kit;
-import com.samarth.duels.kit.KitRegistry;
 import com.samarth.duels.queue.QueueService;
+import com.samarth.kits.KitService;
 import java.util.ArrayList;
 import java.util.List;
 import net.kyori.adventure.text.Component;
@@ -17,7 +16,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 public final class QueueGui {
     public static final String TITLE = "Duels Queue";
 
-    public static Inventory build(KitRegistry kits, QueueService queues) {
+    public static Inventory build(KitService kits, QueueService queues) {
         List<String> names = kits.names();
         int rows = Math.max(1, Math.min(6, (names.size() + 8) / 9 + 1));
         Inventory inv = Bukkit.createInventory(null, rows * 9,
@@ -55,7 +54,7 @@ public final class QueueGui {
         return it;
     }
 
-    public static void open(Player p, KitRegistry kits, QueueService queues) {
+    public static void open(Player p, KitService kits, QueueService queues) {
         p.openInventory(build(kits, queues));
     }
 }
