@@ -11,4 +11,4 @@ plugins {
 
 rootProject.name = "PvPTL"
 
-include("tourney", "duels", "aihelp", "stats", "kits")
+include("tourney", "duels", "aihelp", "stats", "kits", "parties")

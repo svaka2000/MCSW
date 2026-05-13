@@ -1,0 +1,24 @@
+name: PvPTLParties
+version: '${version}'
+main: com.samarth.parties.PartiesPlugin
+api-version: '1.21'
+authors: [Samarth, Weilin]
+description: Party / group system used by Duels for team fights
+
+commands:
+  party:
+    description: Party management
+    aliases: [parties]
+    usage: /party <create|invite|accept|deny|leave|disband|kick|promote|info|chat|help>
+  p:
+    description: Party chat
+    aliases: [pchat, pc]
+    usage: /p <message>
+
+permissions:
+  pvptlparties.use:
+    description: Create / join / use parties
+    default: true
+  pvptlparties.admin:
+    description: Force-disband, view all parties
+    default: op

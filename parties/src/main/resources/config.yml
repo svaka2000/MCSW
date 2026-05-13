@@ -1,0 +1,18 @@
+# =====================================================
+# PvPTL Parties configuration
+# =====================================================
+
+party:
+  # Max members per party (including the leader)
+  max-size: 8
+  # Pending invites expire after this many seconds
+  invite-timeout-seconds: 60
+  # When the leader disconnects: if true, party is disbanded; if false, leadership
+  # auto-transfers to the longest-joined remaining member.
+  disband-on-leader-quit: false
+  # Default 'session-only' parties — no persistence across server restarts.
+  # All parties dissolve cleanly on server stop.
+
+messages:
+  prefix: "<gray>[<light_purple>Party</light_purple>]</gray> "
+  chat-format: "<gray>[<light_purple>Party</light_purple>]</gray> <yellow><name></yellow><gray>:</gray> <white><message></white>"
