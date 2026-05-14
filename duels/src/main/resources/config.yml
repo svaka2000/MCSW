@@ -13,6 +13,14 @@ duels:
   # customize GUI lets challengers pick 1/3/5/7; this is the value used by
   # /duels queue and the default value in the customize GUI.
   default-first-to: 1
+  # Ranked queue games are ALWAYS first-to-N. Defaults to 3 per Weilin's spec.
+  ranked-first-to: 3
+  # Elo system parameters
+  elo-starting: 1000
+  elo-k-factor: 32
+  # Lobby hotbar items: diamond sword (ranked queue picker) + iron sword (unranked).
+  # Set to false to disable.
+  lobby-items: true
   # Legacy key — kept for compatibility on existing installs. Use default-first-to
   # going forward.
   # default-best-of: 1
@@ -33,15 +41,15 @@ server:
 
 locations:
   lobby: null
-  arena:
-    # Multi-spawn list per side. /duels setarena <a|b> [slot] manages these.
-    # For a 1v1 arena, set one spawn per side. For 2v2, two per side. 3v3, three. Etc.
-    spawns_a: []
-    spawns_b: []
-    # Legacy single-spawn keys (kept for backwards compatibility with old configs).
-    # When populated, they're auto-imported into spawns_a / spawns_b at first reload.
-    # a: null
-    # b: null
+  # Multi-arena schema. Each arena is its own map with spawns_a / spawns_b lists.
+  # `/duels setarena <arena> <a|b>` adds spawns to a named arena (default name "arena_0").
+  # Running matches occupy one arena exclusively, so N arenas = up to N parallel matches.
+  arenas: {}
+  # Legacy single-arena schema is read once at first reload and migrated into
+  # arenas.arena_0 if `arenas` is empty. After migration the old `arena` key is wiped.
+  # arena:
+  #   spawns_a: []
+  #   spawns_b: []
 
 # Kits are populated by /duelkit save.
 kits: {}

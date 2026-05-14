@@ -2,17 +2,22 @@ package com.samarth.duels.config;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.bukkit.Location;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.Nullable;
 
 public final class DuelsConfig {
+    public static final String DEFAULT_ARENA_ID = "arena_0";
+
     private final JavaPlugin plugin;
     @Nullable private Location lobby;
-    private final List<Location> spawnsA = new ArrayList<>();
-    private final List<Location> spawnsB = new ArrayList<>();
+    /** Insertion-ordered so listing is deterministic. */
+    private final Map<String, Arena> arenas = new LinkedHashMap<>();
 
     public DuelsConfig(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -23,24 +28,37 @@ public final class DuelsConfig {
         FileConfiguration c = plugin.getConfig();
         lobby = c.get("locations.lobby") instanceof Location l ? l : null;
 
-        spawnsA.clear();
-        spawnsB.clear();
-        // New multi-spawn format: locations.arena.spawns_a / spawns_b as lists.
-        addLocations(c, "locations.arena.spawns_a", spawnsA);
-        addLocations(c, "locations.arena.spawns_b", spawnsB);
-        // Backwards compat: read old single-location keys if the new lists are empty.
-        if (spawnsA.isEmpty() && c.get("locations.arena.a") instanceof Location la) spawnsA.add(la);
-        if (spawnsB.isEmpty() && c.get("locations.arena.b") instanceof Location lb) spawnsB.add(lb);
+        arenas.clear();
+        // New multi-arena schema: locations.arenas.<id>.spawns_a / spawns_b
+        ConfigurationSection arenasSec = c.getConfigurationSection("locations.arenas");
+        if (arenasSec != null) {
+            for (String id : arenasSec.getKeys(false)) {
+                List<Location> a = readLocList(c, "locations.arenas." + id + ".spawns_a");
+                List<Location> b = readLocList(c, "locations.arenas." + id + ".spawns_b");
+                arenas.put(id, new Arena(id, a, b));
+            }
+        }
+        // Backwards compat: migrate legacy single-arena schema.
+        if (arenas.isEmpty()) {
+            List<Location> legacyA = readLocList(c, "locations.arena.spawns_a");
+            List<Location> legacyB = readLocList(c, "locations.arena.spawns_b");
+            if (c.get("locations.arena.a") instanceof Location la) legacyA.add(la);
+            if (c.get("locations.arena.b") instanceof Location lb) legacyB.add(lb);
+            if (!legacyA.isEmpty() || !legacyB.isEmpty()) {
+                arenas.put(DEFAULT_ARENA_ID, new Arena(DEFAULT_ARENA_ID, legacyA, legacyB));
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
-    private static void addLocations(FileConfiguration c, String path, List<Location> into) {
+    private static List<Location> readLocList(FileConfiguration c, String path) {
         Object raw = c.get(path);
-        if (raw instanceof List<?> list) {
-            for (Object o : list) {
-                if (o instanceof Location l) into.add(l);
-            }
+        if (!(raw instanceof List<?> list)) return new ArrayList<>();
+        List<Location> out = new ArrayList<>(list.size());
+        for (Object o : list) {
+            if (o instanceof Location l) out.add(l);
         }
+        return out;
     }
 
     public int killsPerRound() { return plugin.getConfig().getInt("duels.kills-per-round", 1); }
@@ -48,35 +66,61 @@ public final class DuelsConfig {
         return plugin.getConfig().getInt("duels.default-first-to",
             plugin.getConfig().getInt("duels.default-best-of", 1));
     }
+    public int rankedFirstTo() { return plugin.getConfig().getInt("duels.ranked-first-to", 3); }
+    public int eloStarting() { return plugin.getConfig().getInt("duels.elo-starting", 1000); }
+    public int eloKFactor() { return plugin.getConfig().getInt("duels.elo-k-factor", 32); }
     public int freezeSeconds() { return plugin.getConfig().getInt("duels.freeze-seconds", 3); }
     public int matchTimeCapSeconds() { return plugin.getConfig().getInt("duels.match-time-cap-seconds", 180); }
     public int challengeTimeoutSeconds() { return plugin.getConfig().getInt("duels.challenge-timeout-seconds", 30); }
     public int challengeCooldownSeconds() { return plugin.getConfig().getInt("duels.challenge-cooldown-seconds", 5); }
     public String defaultKit() { return plugin.getConfig().getString("duels.default-kit", ""); }
     public String serverIp() { return plugin.getConfig().getString("server.ip", "pvptl.com"); }
+    public boolean lobbyItemsEnabled() { return plugin.getConfig().getBoolean("duels.lobby-items", true); }
 
     public @Nullable Location lobby() { return lobby == null ? null : lobby.clone(); }
 
-    /** All spawn points for side A (in setup order). Never null; may be empty. */
+    // ----- arena queries -----
+
+    /** All arenas in insertion order. Never null; may be empty. */
+    public List<Arena> arenas() { return new ArrayList<>(arenas.values()); }
+
+    public @Nullable Arena arena(String id) { return arenas.get(id); }
+
+    public int totalArenas() { return arenas.size(); }
+
+    /** Max team size across all arenas (used to gate party-duel size checks). */
+    public int maxTeamSize() {
+        int best = 0;
+        for (Arena a : arenas.values()) best = Math.max(best, a.maxTeamSize());
+        return best;
+    }
+
+    public boolean isArenaReady() {
+        for (Arena a : arenas.values()) if (a.isReady()) return true;
+        return false;
+    }
+
+    // ----- legacy 1-arena accessors (back-compat for callers that haven't been refactored) -----
+
     public List<Location> spawnsA() {
-        List<Location> out = new ArrayList<>(spawnsA.size());
-        for (Location l : spawnsA) out.add(l.clone());
-        return out;
+        return arenas.isEmpty() ? List.of() : arenas.values().iterator().next().spawnsA();
     }
 
     public List<Location> spawnsB() {
-        List<Location> out = new ArrayList<>(spawnsB.size());
-        for (Location l : spawnsB) out.add(l.clone());
-        return out;
+        return arenas.isEmpty() ? List.of() : arenas.values().iterator().next().spawnsB();
     }
 
-    /** Convenience: first spawn of side A (used by legacy 1v1 paths). */
-    public @Nullable Location arenaA() { return spawnsA.isEmpty() ? null : spawnsA.get(0).clone(); }
-    public @Nullable Location arenaB() { return spawnsB.isEmpty() ? null : spawnsB.get(0).clone(); }
+    public @Nullable Location arenaA() {
+        List<Location> a = spawnsA();
+        return a.isEmpty() ? null : a.get(0);
+    }
 
-    public int maxTeamSize() { return Math.min(spawnsA.size(), spawnsB.size()); }
+    public @Nullable Location arenaB() {
+        List<Location> b = spawnsB();
+        return b.isEmpty() ? null : b.get(0);
+    }
 
-    public boolean isArenaReady() { return !spawnsA.isEmpty() && !spawnsB.isEmpty(); }
+    // ----- mutators -----
 
     public void setLobby(Location loc) {
         plugin.getConfig().set("locations.lobby", loc);
@@ -85,34 +129,53 @@ public final class DuelsConfig {
     }
 
     /**
-     * Set a specific spawn slot. If slot is &lt; 0 the spawn is appended.
+     * Write a spawn into a specific arena+side+slot.
+     * Pass {@code slot < 0} to append. Creates the arena if it doesn't exist.
      * Returns the slot index actually written.
      */
-    public int setSpawn(char side, int slot, Location loc) {
-        String path = side == 'a' || side == 'A' ? "locations.arena.spawns_a" : "locations.arena.spawns_b";
-        List<Location> list = side == 'a' || side == 'A' ? spawnsA : spawnsB;
-        List<Location> mutable = new ArrayList<>(list);
+    public int setSpawn(String arenaId, char side, int slot, Location loc) {
+        Arena existing = arenas.get(arenaId);
+        List<Location> a = existing == null ? new ArrayList<>() : new ArrayList<>(existing.spawnsA());
+        List<Location> b = existing == null ? new ArrayList<>() : new ArrayList<>(existing.spawnsB());
+        boolean sideA = side == 'a' || side == 'A';
+        List<Location> target = sideA ? a : b;
         int idx;
-        if (slot < 0 || slot >= mutable.size()) {
-            mutable.add(loc);
-            idx = mutable.size() - 1;
+        if (slot < 0 || slot >= target.size()) {
+            target.add(loc);
+            idx = target.size() - 1;
         } else {
-            mutable.set(slot, loc);
+            target.set(slot, loc);
             idx = slot;
         }
-        plugin.getConfig().set(path, mutable);
-        // Clear legacy single-spawn keys if present (we own this side now).
-        plugin.getConfig().set("locations.arena." + (side == 'a' || side == 'A' ? "a" : "b"), null);
+        plugin.getConfig().set("locations.arenas." + arenaId + ".spawns_a", a);
+        plugin.getConfig().set("locations.arenas." + arenaId + ".spawns_b", b);
+        // Clear legacy single-spawn keys if they were the source of the original data.
+        if (DEFAULT_ARENA_ID.equals(arenaId)) {
+            plugin.getConfig().set("locations.arena", null);
+        }
         plugin.saveConfig();
         reload();
         return idx;
     }
 
-    /** Remove all spawns on the given side. */
-    public void clearSpawns(char side) {
-        String path = side == 'a' || side == 'A' ? "locations.arena.spawns_a" : "locations.arena.spawns_b";
-        plugin.getConfig().set(path, Collections.emptyList());
-        plugin.getConfig().set("locations.arena." + (side == 'a' || side == 'A' ? "a" : "b"), null);
+    /** Remove all spawns on a side of one arena. Pass 'x' to wipe both sides. */
+    public void clearSpawns(String arenaId, char side) {
+        Arena existing = arenas.get(arenaId);
+        if (existing == null) return;
+        boolean sideA = side == 'a' || side == 'A';
+        boolean sideB = side == 'b' || side == 'B';
+        boolean both = !sideA && !sideB;
+        List<Location> a = both || sideA ? Collections.emptyList() : existing.spawnsA();
+        List<Location> b = both || sideB ? Collections.emptyList() : existing.spawnsB();
+        plugin.getConfig().set("locations.arenas." + arenaId + ".spawns_a", a);
+        plugin.getConfig().set("locations.arenas." + arenaId + ".spawns_b", b);
+        plugin.saveConfig();
+        reload();
+    }
+
+    /** Wipe an arena entry entirely. */
+    public void deleteArena(String arenaId) {
+        plugin.getConfig().set("locations.arenas." + arenaId, null);
         plugin.saveConfig();
         reload();
     }

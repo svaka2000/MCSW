@@ -31,6 +31,8 @@ public final class DuelMatch {
     private final String kitName;
     private final int firstTo;
     private final boolean useTimeLimit;
+    private final String arenaId;
+    private final boolean ranked;
 
     private MatchState state = MatchState.PENDING;
     private int killsA;
@@ -52,12 +54,20 @@ public final class DuelMatch {
     private final Map<UUID, Location> savedLocation = new HashMap<>();
     private final Map<UUID, GameMode> savedGameMode = new HashMap<>();
 
-    public DuelMatch(List<UUID> teamA, List<UUID> teamB, String kitName, int firstTo, boolean useTimeLimit) {
+    public DuelMatch(List<UUID> teamA, List<UUID> teamB, String kitName,
+                     int firstTo, boolean useTimeLimit) {
+        this(teamA, teamB, kitName, firstTo, useTimeLimit, "arena_0", false);
+    }
+
+    public DuelMatch(List<UUID> teamA, List<UUID> teamB, String kitName,
+                     int firstTo, boolean useTimeLimit, String arenaId, boolean ranked) {
         this.teamA = List.copyOf(teamA);
         this.teamB = List.copyOf(teamB);
         this.kitName = kitName;
         this.firstTo = Math.max(1, firstTo);
         this.useTimeLimit = useTimeLimit;
+        this.arenaId = arenaId;
+        this.ranked = ranked;
     }
 
     public UUID id() { return id; }
@@ -66,6 +76,8 @@ public final class DuelMatch {
     public String kitName() { return kitName; }
     public int firstTo() { return firstTo; }
     public boolean useTimeLimit() { return useTimeLimit; }
+    public String arenaId() { return arenaId; }
+    public boolean ranked() { return ranked; }
     public int roundsNeeded() { return firstTo; }
 
     public boolean isTeamMatch() { return teamA.size() > 1 || teamB.size() > 1; }

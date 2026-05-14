@@ -1,5 +1,6 @@
 package com.samarth.duels.match;
 
+import com.samarth.duels.config.Arena;
 import com.samarth.duels.config.DuelsConfig;
 import com.samarth.duels.kit.KitsBridge;
 import com.samarth.kits.KitService;
@@ -51,7 +52,8 @@ public final class MatchRunner {
     @Nullable private com.samarth.duels.queue.QueueService queues;
 
     private final Map<UUID, DuelMatch> matchByPlayer = new HashMap<>();
-    @Nullable private DuelMatch arenaInUse;
+    /** Currently-running match per arena ID. An entry means that arena is occupied. */
+    private final Map<String, DuelMatch> activeByArena = new HashMap<>();
     private final List<PendingDuel> waiting = new ArrayList<>();
     /** Player UUIDs that finished a match while dead — when they respawn, teleport here. */
     private final Map<UUID, Location> postMatchTeleport = new HashMap<>();
@@ -69,31 +71,51 @@ public final class MatchRunner {
     public boolean isInMatch(UUID id) { return matchByPlayer.containsKey(id); }
     public @Nullable DuelMatch matchOf(UUID id) { return matchByPlayer.get(id); }
 
-    public boolean isArenaBusy() { return arenaInUse != null; }
+    public boolean isArenaBusy() {
+        // "Any arena busy?" — kept for the /duels info display.
+        return !activeByArena.isEmpty();
+    }
+
+    public int activeMatchCount() { return activeByArena.size(); }
+    public int waitingMatchCount() { return waiting.size(); }
 
     /** 1v1 convenience — wraps single players into single-element teams. */
     public void start(Player a, Player b, String kitName, int firstTo, boolean useTimeLimit) {
-        start(List.of(a), List.of(b), kitName, firstTo, useTimeLimit);
+        start(List.of(a), List.of(b), kitName, firstTo, useTimeLimit, false);
+    }
+
+    /** 1v1 ranked-aware convenience. */
+    public void start(Player a, Player b, String kitName, int firstTo,
+                      boolean useTimeLimit, boolean ranked) {
+        start(List.of(a), List.of(b), kitName, firstTo, useTimeLimit, ranked);
+    }
+
+    public void start(List<Player> teamA, List<Player> teamB,
+                      String kitName, int firstTo, boolean useTimeLimit) {
+        start(teamA, teamB, kitName, firstTo, useTimeLimit, false);
     }
 
     /**
      * Start a duel between two teams. Each team's slot index in its list maps to the
      * corresponding arena spawn slot (team A slot 0 → spawnsA[0], etc.).
+     *
+     * If multiple arenas are configured, picks the first idle arena that fits both
+     * team sizes. If every arena is busy or none fit, the match queues until an
+     * arena frees up.
      */
     public void start(List<Player> teamA, List<Player> teamB,
-                      String kitName, int firstTo, boolean useTimeLimit) {
+                      String kitName, int firstTo, boolean useTimeLimit, boolean ranked) {
         if (teamA.isEmpty() || teamB.isEmpty()) return;
-        if (!config.isArenaReady()) {
+        if (config.totalArenas() == 0) {
             broadcastTo(teamA, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
             broadcastTo(teamB, "<red>Arena not configured. Ask an op to run /duels setarena.</red>");
             return;
         }
-        List<Location> spawnsA = config.spawnsA();
-        List<Location> spawnsB = config.spawnsB();
-        if (spawnsA.size() < teamA.size() || spawnsB.size() < teamB.size()) {
-            String err = "<red>Arena only has " + spawnsA.size() + " vs " + spawnsB.size()
-                + " spawns — not enough for a " + teamA.size() + "v" + teamB.size()
-                + " match. Ask an op to add more with /duels setarena.</red>";
+        // Any arena that fits both team sizes? (regardless of busy state)
+        Arena fittingArena = firstFittingArena(teamA.size(), teamB.size(), true);
+        if (fittingArena == null) {
+            String err = "<red>No arena has " + teamA.size() + " vs " + teamB.size()
+                + " spawn slots. Ask an op to add more with /duels setarena.</red>";
             broadcastTo(teamA, err);
             broadcastTo(teamB, err);
             return;
@@ -123,19 +145,22 @@ public final class MatchRunner {
                 return;
             }
         }
-        if (arenaInUse != null) {
+        // Pick a FREE arena that fits.
+        Arena arena = firstFreeArena(teamA.size(), teamB.size());
+        if (arena == null) {
             List<UUID> idsA = toIds(teamA);
             List<UUID> idsB = toIds(teamB);
-            waiting.add(new PendingDuel(idsA, idsB, kitName, firstTo, useTimeLimit));
-            String waitMsg = "<gray>Arena busy — waiting for current duel to finish. (#"
-                + waiting.size() + " in queue)</gray>";
+            waiting.add(new PendingDuel(idsA, idsB, kitName, firstTo, useTimeLimit, ranked));
+            String waitMsg = "<gray>All arenas busy — waiting in queue. (#"
+                + waiting.size() + ")</gray>";
             broadcastTo(teamA, waitMsg);
             broadcastTo(teamB, waitMsg);
             return;
         }
 
-        DuelMatch m = new DuelMatch(toIds(teamA), toIds(teamB), kitName, firstTo, useTimeLimit);
-        arenaInUse = m;
+        DuelMatch m = new DuelMatch(toIds(teamA), toIds(teamB), kitName, firstTo,
+            useTimeLimit, arena.id(), ranked);
+        activeByArena.put(arena.id(), m);
         for (Player p : teamA) matchByPlayer.put(p.getUniqueId(), m);
         for (Player p : teamB) matchByPlayer.put(p.getUniqueId(), m);
         m.setState(MatchState.PREP);
@@ -143,6 +168,8 @@ public final class MatchRunner {
         broadcastTo(teamA, config.msg("match-found"));
         broadcastTo(teamB, config.msg("match-found"));
 
+        List<Location> spawnsA = arena.spawnsA();
+        List<Location> spawnsB = arena.spawnsB();
         // Save + prepare each fighter on their slot's spawn.
         for (int i = 0; i < teamA.size(); i++) {
             saveAndPrepare(teamA.get(i), kitName, spawnsA.get(i), m);
@@ -164,12 +191,22 @@ public final class MatchRunner {
         }
 
         rebuildSidebar(m);
-
-        // Refresh entity tracking after teleport so clients have the freeze countdown
-        // to settle on accurate positions before fighting starts.
         refreshPlayerVisibility(m.allPlayers());
-
         scheduleFreeze(m, true);
+    }
+
+    /** First arena (in config order) that fits both team sizes. Optionally include busy ones. */
+    private @Nullable Arena firstFittingArena(int teamASize, int teamBSize, boolean includeBusy) {
+        for (Arena a : config.arenas()) {
+            if (!a.isReady() || !a.canFit(teamASize, teamBSize)) continue;
+            if (!includeBusy && activeByArena.containsKey(a.id())) continue;
+            return a;
+        }
+        return null;
+    }
+
+    private @Nullable Arena firstFreeArena(int teamASize, int teamBSize) {
+        return firstFittingArena(teamASize, teamBSize, false);
     }
 
     private void saveAndPrepare(Player p, String kitName, Location spawn, DuelMatch m) {
@@ -346,7 +383,9 @@ public final class MatchRunner {
         if (m.state() == MatchState.ENDED || m.state() == MatchState.PENDING) return null;
         int team = m.teamOf(victim.getUniqueId());
         if (team == 0) return null;
-        List<Location> spawns = team == 1 ? config.spawnsA() : config.spawnsB();
+        Arena arena = config.arena(m.arenaId());
+        if (arena == null) return null;
+        List<Location> spawns = team == 1 ? arena.spawnsA() : arena.spawnsB();
         if (spawns.isEmpty()) return null;
         int slot = m.slotOf(victim.getUniqueId());
         if (slot < 0 || slot >= spawns.size()) slot = 0;
@@ -368,13 +407,14 @@ public final class MatchRunner {
 
     private void resetRound(DuelMatch m) {
         if (m.state() != MatchState.PREP) return;
-        List<Location> spawnsA = config.spawnsA();
-        List<Location> spawnsB = config.spawnsB();
-        if (spawnsA.size() < m.teamA().size() || spawnsB.size() < m.teamB().size()) {
-            // Arena got reconfigured mid-match; bail out cleanly.
+        Arena arena = config.arena(m.arenaId());
+        if (arena == null || !arena.canFit(m.teamA().size(), m.teamB().size())) {
+            // Arena got reconfigured or deleted mid-match; bail out cleanly.
             endMatch(m, 0);
             return;
         }
+        List<Location> spawnsA = arena.spawnsA();
+        List<Location> spawnsB = arena.spawnsB();
         for (int i = 0; i < m.teamA().size(); i++) {
             Player p = Bukkit.getPlayer(m.teamA().get(i));
             if (p == null) continue;
@@ -431,7 +471,7 @@ public final class MatchRunner {
 
         List<UUID> allIds = m.allPlayers();
         for (UUID id : allIds) matchByPlayer.remove(id);
-        arenaInUse = null;
+        activeByArena.remove(m.arenaId());
 
         refreshPlayerVisibility(allIds);
 
@@ -545,16 +585,26 @@ public final class MatchRunner {
     }
 
     private void startNextWaiting() {
-        if (arenaInUse != null || waiting.isEmpty()) return;
-        PendingDuel next = waiting.remove(0);
-        List<Player> teamA = onlinePlayersFor(next.teamA);
-        List<Player> teamB = onlinePlayersFor(next.teamB);
-        if (teamA.size() != next.teamA.size() || teamB.size() != next.teamB.size()) {
-            // One or more participants left — skip and try the next waiter.
-            startNextWaiting();
+        if (waiting.isEmpty()) return;
+        // Scan waiters and try to schedule each into any free, fitting arena.
+        // We don't strictly preserve FIFO when a smaller match fits but a bigger one is at the head —
+        // that's a feature (no head-of-line blocking on a too-large match).
+        for (int i = 0; i < waiting.size(); i++) {
+            PendingDuel pd = waiting.get(i);
+            Arena free = firstFreeArena(pd.teamA.size(), pd.teamB.size());
+            if (free == null) continue;
+            List<Player> teamA = onlinePlayersFor(pd.teamA);
+            List<Player> teamB = onlinePlayersFor(pd.teamB);
+            waiting.remove(i);
+            if (teamA.size() != pd.teamA.size() || teamB.size() != pd.teamB.size()) {
+                // Someone logged out — drop this waiter and try the next.
+                i--;
+                continue;
+            }
+            start(teamA, teamB, pd.kit, pd.firstTo, pd.useTimeLimit, pd.ranked);
+            // start() may itself queue if all arenas filled in the meantime; either way, exit.
             return;
         }
-        start(teamA, teamB, next.kit, next.firstTo, next.useTimeLimit);
     }
 
     private void refreshPlayerVisibility(List<UUID> participants) {
@@ -767,12 +817,15 @@ public final class MatchRunner {
         final String kit;
         final int firstTo;
         final boolean useTimeLimit;
-        PendingDuel(List<UUID> teamA, List<UUID> teamB, String kit, int firstTo, boolean useTimeLimit) {
+        final boolean ranked;
+        PendingDuel(List<UUID> teamA, List<UUID> teamB, String kit, int firstTo,
+                    boolean useTimeLimit, boolean ranked) {
             this.teamA = List.copyOf(teamA);
             this.teamB = List.copyOf(teamB);
             this.kit = kit;
             this.firstTo = firstTo;
             this.useTimeLimit = useTimeLimit;
+            this.ranked = ranked;
         }
     }
 }
