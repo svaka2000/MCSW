@@ -66,12 +66,13 @@ The biggest plugin. Everything below is in `Duels.jar`.
 
 | Command | Notes |
 |---|---|
-| `/duel <player>` | Open kit picker for a 1v1 challenge |
+| `/duel <player>` | Open kit picker for a 1v1 challenge (right-click a kit to pick first-to 1/5/6/7/10/15) |
 | `/partyduel <leader>` | Party leader → challenge another party leader |
 | `/duels queue [kit]` | Manual unranked queue join |
 | `/duels gui` | Open the kit/queue picker |
 | `/duels leave` | Leave the current queue |
 | `/duels accept` / `deny` | Accept or deny the most recent pending challenge |
+| `/leave` | Forfeit your current duel or tournament match, or leave a queue |
 | `/duels info` | Status: arenas, kits, active matches, waiting queue |
 | `/duels setlobby` | Admin — save current location as lobby |
 | `/duels setarena <a\|b>` | Admin — append spawn at your loc (default arena) |
@@ -154,7 +155,7 @@ Check what you've got:
 
 ```yaml
 duels:
-  default-first-to: 1       # casual default (1 / 3 / 5 / 7 selectable in GUI)
+  default-first-to: 1       # casual default (1 / 5 / 6 / 7 / 10 / 15 selectable in GUI)
   ranked-first-to: 3        # ranked is always first-to-N (default 3)
   elo-starting: 1000        # new players start here
   elo-k-factor: 32          # higher = bigger Elo swings per match
