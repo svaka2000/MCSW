@@ -193,9 +193,11 @@ public final class NpcInteractionListener implements Listener {
         boolean refresh = true;
         switch (slot) {
             case DuelCustomizeHolder.SLOT_ROUNDS_1 -> cust.setRounds(1);
-            case DuelCustomizeHolder.SLOT_ROUNDS_3 -> cust.setRounds(3);
             case DuelCustomizeHolder.SLOT_ROUNDS_5 -> cust.setRounds(5);
+            case DuelCustomizeHolder.SLOT_ROUNDS_6 -> cust.setRounds(6);
             case DuelCustomizeHolder.SLOT_ROUNDS_7 -> cust.setRounds(7);
+            case DuelCustomizeHolder.SLOT_ROUNDS_10 -> cust.setRounds(10);
+            case DuelCustomizeHolder.SLOT_ROUNDS_15 -> cust.setRounds(15);
             case DuelCustomizeHolder.SLOT_TIME_LIMIT -> cust.setUseTimeLimit(!cust.useTimeLimit());
             case DuelCustomizeHolder.SLOT_CANCEL -> {
                 viewer.closeInventory();

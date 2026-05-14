@@ -20,6 +20,7 @@ dependencies {
     compileOnly(project(":stats"))
     compileOnly(project(":kits"))
     compileOnly(project(":parties"))
+    compileOnly(project(":tourney"))
 }
 
 tasks {

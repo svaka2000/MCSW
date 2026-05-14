@@ -18,21 +18,23 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * Customize GUI shown when a player right-clicks a kit in DuelSetupHolder.
- * Lets the challenger pick rounds (1/3/5/7) and toggle the match time limit.
+ * Lets the challenger pick first-to-N rounds (1/5/6/7/10/15) and toggle the match time limit.
  *
  * Slot layout (27-slot chest):
  *   slot 4:  title paper
- *   slot 10–13: round buttons (1, 3, 5, 7)
- *   slot 15: time-limit toggle
+ *   slot 9–14: round buttons (1, 5, 6, 7, 10, 15)
+ *   slot 16: time-limit toggle
  *   slot 18: cancel
  *   slot 22: send
  */
 public final class DuelCustomizeHolder implements InventoryHolder {
-    public static final int SLOT_ROUNDS_1 = 10;
-    public static final int SLOT_ROUNDS_3 = 11;
-    public static final int SLOT_ROUNDS_5 = 12;
-    public static final int SLOT_ROUNDS_7 = 13;
-    public static final int SLOT_TIME_LIMIT = 15;
+    public static final int SLOT_ROUNDS_1 = 9;
+    public static final int SLOT_ROUNDS_5 = 10;
+    public static final int SLOT_ROUNDS_6 = 11;
+    public static final int SLOT_ROUNDS_7 = 12;
+    public static final int SLOT_ROUNDS_10 = 13;
+    public static final int SLOT_ROUNDS_15 = 14;
+    public static final int SLOT_TIME_LIMIT = 16;
     public static final int SLOT_CANCEL = 18;
     public static final int SLOT_SEND = 22;
 
@@ -83,9 +85,11 @@ public final class DuelCustomizeHolder implements InventoryHolder {
 
         inv.setItem(4, titleItem());
         inv.setItem(SLOT_ROUNDS_1, roundButton(1));
-        inv.setItem(SLOT_ROUNDS_3, roundButton(3));
         inv.setItem(SLOT_ROUNDS_5, roundButton(5));
+        inv.setItem(SLOT_ROUNDS_6, roundButton(6));
         inv.setItem(SLOT_ROUNDS_7, roundButton(7));
+        inv.setItem(SLOT_ROUNDS_10, roundButton(10));
+        inv.setItem(SLOT_ROUNDS_15, roundButton(15));
         inv.setItem(SLOT_TIME_LIMIT, timeLimitButton());
         inv.setItem(SLOT_CANCEL, cancelButton());
         inv.setItem(SLOT_SEND, sendButton());
@@ -114,11 +118,14 @@ public final class DuelCustomizeHolder implements InventoryHolder {
     }
 
     private ItemStack roundButton(int count) {
+        // Material escalates with how long a "first-to-N" match takes.
         Material mat = switch (count) {
             case 1 -> Material.STONE;
-            case 3 -> Material.IRON_BLOCK;
-            case 5 -> Material.GOLD_BLOCK;
-            case 7 -> Material.DIAMOND_BLOCK;
+            case 5 -> Material.IRON_BLOCK;
+            case 6 -> Material.COPPER_BLOCK;
+            case 7 -> Material.GOLD_BLOCK;
+            case 10 -> Material.DIAMOND_BLOCK;
+            case 15 -> Material.NETHERITE_BLOCK;
             default -> Material.STONE;
         };
         ItemStack it = new ItemStack(mat);

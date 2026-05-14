@@ -59,4 +59,7 @@ public final class TourneyPlugin extends JavaPlugin {
             manager.cancelTournament(getServer().getConsoleSender());
         }
     }
+
+    /** Public accessor so sibling plugins (e.g. Duels' /leave) can route forfeits. */
+    public TournamentManager tournamentManager() { return manager; }
 }

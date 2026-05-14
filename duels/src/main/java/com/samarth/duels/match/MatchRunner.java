@@ -602,6 +602,24 @@ public final class MatchRunner {
             + "</white> <red>(" + sign + u.delta() + ")</red></gray>";
     }
 
+    /**
+     * Forfeit while still online — opposing team wins immediately. In team duels,
+     * the forfeiting player's whole team eats the loss (simpler v1 semantic; we
+     * can soften this later to "forfeit only the player, team plays short-handed"
+     * if there's demand). Returns true if a match was forfeited.
+     */
+    public boolean forfeitMatch(Player p) {
+        DuelMatch m = matchByPlayer.get(p.getUniqueId());
+        if (m == null) return false;
+        int team = m.teamOf(p.getUniqueId());
+        if (team == 0) return false;
+        int winningTeam = (team == 1) ? 2 : 1;
+        broadcastPrefixed(MM.deserialize("<yellow><player> forfeited the duel.</yellow>",
+            Placeholder.parsed("player", p.getName())));
+        endMatch(m, winningTeam);
+        return true;
+    }
+
     public void handleDisconnect(Player p) {
         DuelMatch m = matchByPlayer.get(p.getUniqueId());
         if (m == null) return;
@@ -795,7 +813,12 @@ public final class MatchRunner {
     }
 
     private void broadcastPrefixed(Component c) {
-        Bukkit.broadcast(MM.deserialize(config.prefix()).append(c));
+        // Direct iteration instead of Bukkit.broadcast(...) — that gates on the
+        // `bukkit.broadcast.user` permission, which isn't reliably granted on
+        // perm-plugin setups (LuckPerms wiped defaults, etc.).
+        Component out = MM.deserialize(config.prefix()).append(c);
+        for (Player p : Bukkit.getOnlinePlayers()) p.sendMessage(out);
+        Bukkit.getConsoleSender().sendMessage(out);
     }
 
     private static String nameOf(UUID id) {

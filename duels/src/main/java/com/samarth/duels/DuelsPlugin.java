@@ -4,6 +4,7 @@ import com.samarth.duels.challenge.ChallengeService;
 import com.samarth.duels.commands.DuelCommand;
 import com.samarth.duels.commands.DuelsCommand;
 import com.samarth.duels.commands.LeaderboardCommand;
+import com.samarth.duels.commands.LeaveCommand;
 import com.samarth.duels.commands.PartyDuelCommand;
 import com.samarth.duels.config.DuelsConfig;
 import com.samarth.duels.listeners.LobbyListener;
@@ -40,6 +41,7 @@ public final class DuelsPlugin extends JavaPlugin {
         bind("duel", new DuelCommand(this));
         bind("partyduel", new PartyDuelCommand(this));
         bind("elo", new LeaderboardCommand(this));
+        bind("leave", new LeaveCommand(this));
 
         getServer().getPluginManager().registerEvents(new MatchListener(this, matches), this);
         getServer().getPluginManager().registerEvents(new NpcInteractionListener(queues, challenges, config, lobbyItems), this);

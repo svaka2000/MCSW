@@ -153,7 +153,7 @@ public final class TournamentManager {
 
         Component broadcast = MM.deserialize(config.msg("join-broadcast"),
             Placeholder.parsed("time", Hud.formatMmSs(joinSec)));
-        Bukkit.broadcast(prefixed(broadcast));
+        broadcastPrefixed(broadcast);
 
         hud.showJoinBarToAll(joinSec, t.players().size());
 
@@ -688,6 +688,37 @@ public final class TournamentManager {
 
     // ----- presence -----
 
+    /**
+     * Forfeit an in-progress match — opposite player gets the win immediately,
+     * forfeiting player's inventory is restored on the normal post-match path.
+     * Returns true if a match was forfeited (or the player was removed from the
+     * joining list); false if there was nothing to forfeit.
+     *
+     * Used by Duels' /leave so a single command works across both plugins.
+     */
+    public boolean forfeitMatch(Player p) {
+        if (active == null) return false;
+        if (active.state() == TournamentState.JOINING && active.players().contains(p.getUniqueId())) {
+            leaveTournament(p);
+            return true;
+        }
+        Match m = active.activeMatchesByPlayer().get(p.getUniqueId());
+        if (m == null) return false;
+        // Cancel any pending disconnect-grace task so it doesn't double-fire.
+        BukkitTask grace = graceTasks.remove(p.getUniqueId());
+        if (grace != null) grace.cancel();
+        UUID winner = p.getUniqueId().equals(m.playerA()) ? m.playerB() : m.playerA();
+        String name = p.getName();
+        broadcastPrefixed(MM.deserialize(config.msg("forfeit"),
+            Placeholder.parsed("player", name == null ? "Player" : name)));
+        endMatch(m, winner);
+        return true;
+    }
+
+    public boolean isPlayerInJoining(java.util.UUID id) {
+        return active != null && active.state() == TournamentState.JOINING && active.players().contains(id);
+    }
+
     public void onPlayerQuit(Player p) {
         if (active == null) return;
         if (active.state() == TournamentState.JOINING) {
@@ -734,7 +765,13 @@ public final class TournamentManager {
     }
 
     public void broadcastPrefixed(Component msg) {
-        Bukkit.broadcast(prefixed(msg));
+        // Direct iteration instead of Bukkit.broadcast(...) — the latter gates on
+        // the `bukkit.broadcast.user` permission, which isn't reliably granted on
+        // some perm-plugin setups (LuckPerms wiped defaults, etc.), so the
+        // operator who started the tournament was the only one seeing the message.
+        Component out = prefixed(msg);
+        for (Player p : Bukkit.getOnlinePlayers()) p.sendMessage(out);
+        Bukkit.getConsoleSender().sendMessage(out);
     }
 
     private void send(CommandSender to, String msgKey) {

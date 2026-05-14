@@ -4,7 +4,7 @@ main: com.samarth.duels.DuelsPlugin
 api-version: '1.21'
 authors: [Samarth, Weilin]
 description: PvPTL Duels — 1v1 duels with queues, parties, custom kits
-softdepend: [PvPTLStats, PvPTLKits, PvPTLParties]
+softdepend: [PvPTLStats, PvPTLKits, PvPTLParties, Tourney]
 
 commands:
   duels:
@@ -19,6 +19,9 @@ commands:
   elo:
     description: Ranked Elo leaderboard
     usage: /elo top <kit>
+  leave:
+    description: Forfeit your current duel or tournament match, or leave the queue
+    usage: /leave
   # /duelkit removed in favor of /kitsave from PvPTLKits — the single source of truth
   # for kits shared across Tourney and Duels.
 
