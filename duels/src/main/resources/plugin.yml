@@ -16,6 +16,9 @@ commands:
   partyduel:
     description: Challenge another party's leader to a team-vs-team duel
     usage: /partyduel <player>
+  elo:
+    description: Ranked Elo leaderboard
+    usage: /elo top <kit>
   # /duelkit removed in favor of /kitsave from PvPTLKits — the single source of truth
   # for kits shared across Tourney and Duels.
 

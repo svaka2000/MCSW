@@ -2,9 +2,11 @@ package com.samarth.stats;
 
 import com.samarth.stats.db.Database;
 import com.samarth.stats.model.DuelResult;
+import com.samarth.stats.model.EloEntry;
 import com.samarth.stats.model.KitStats;
 import com.samarth.stats.model.LeaderboardEntry;
 import com.samarth.stats.model.PlayerProfile;
+import com.samarth.stats.model.RankedUpdate;
 import com.samarth.stats.model.TournamentResult;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -14,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -52,24 +55,183 @@ public final class StatsServiceImpl implements StatsService {
 
     @Override
     public void recordDuelResult(DuelResult r) {
+        runAsync(() -> insertDuelRow(r));
+    }
+
+    private void insertDuelRow(DuelResult r) {
+        String sql =
+            "INSERT INTO duel_results (ts, winner_uuid, loser_uuid, kit, best_of, " +
+            "winner_rounds, loser_rounds, duration_seconds, ranked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement ps = db.connection().prepareStatement(sql)) {
+            ps.setLong(1, r.timestampMillis());
+            ps.setString(2, r.winnerUuid().toString());
+            ps.setString(3, r.loserUuid().toString());
+            ps.setString(4, r.kit());
+            ps.setInt(5, r.bestOf());
+            ps.setInt(6, r.winnerRounds());
+            ps.setInt(7, r.loserRounds());
+            ps.setLong(8, r.durationSeconds());
+            ps.setInt(9, r.ranked() ? 1 : 0);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            warn("recordDuelResult", e);
+        }
+    }
+
+    @Override
+    public void recordRankedDuelResult(DuelResult result, @Nullable BiConsumer<RankedUpdate, RankedUpdate> onComplete) {
+        // Force ranked=true even if caller passed false.
+        DuelResult ranked = result.ranked() ? result : new DuelResult(
+            result.timestampMillis(), result.winnerUuid(), result.loserUuid(),
+            result.kit(), result.bestOf(), result.winnerRounds(), result.loserRounds(),
+            result.durationSeconds(), true);
         runAsync(() -> {
-            String sql =
-                "INSERT INTO duel_results (ts, winner_uuid, loser_uuid, kit, best_of, " +
-                "winner_rounds, loser_rounds, duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-            try (PreparedStatement ps = db.connection().prepareStatement(sql)) {
-                ps.setLong(1, r.timestampMillis());
-                ps.setString(2, r.winnerUuid().toString());
-                ps.setString(3, r.loserUuid().toString());
-                ps.setString(4, r.kit());
-                ps.setInt(5, r.bestOf());
-                ps.setInt(6, r.winnerRounds());
-                ps.setInt(7, r.loserRounds());
-                ps.setLong(8, r.durationSeconds());
-                ps.executeUpdate();
+            insertDuelRow(ranked);
+            RankedUpdate[] updates;
+            try {
+                updates = applyEloUpdate(ranked.winnerUuid(), ranked.loserUuid(), ranked.kit());
             } catch (SQLException e) {
-                warn("recordDuelResult", e);
+                warn("recordRankedDuelResult", e);
+                return;
+            }
+            if (onComplete != null && updates != null) {
+                final RankedUpdate w = updates[0];
+                final RankedUpdate l = updates[1];
+                Bukkit.getScheduler().runTask(plugin, () -> onComplete.accept(w, l));
             }
         });
+    }
+
+    /** Standard Elo: K=32 default, configurable via duels.elo-k-factor (read from the duels plugin). */
+    private RankedUpdate[] applyEloUpdate(UUID winnerId, UUID loserId, String kit) throws SQLException {
+        int kFactor = readK();
+        int starting = readStartingElo();
+        EloEntry winnerOld = upsertEloRow(winnerId, kit, starting);
+        EloEntry loserOld = upsertEloRow(loserId, kit, starting);
+        int rw = winnerOld.elo();
+        int rl = loserOld.elo();
+        double ew = 1.0 / (1.0 + Math.pow(10.0, (rl - rw) / 400.0));
+        double el = 1.0 - ew;
+        int rwNew = (int) Math.round(rw + kFactor * (1.0 - ew));
+        int rlNew = (int) Math.round(rl + kFactor * (0.0 - el));
+        long now = System.currentTimeMillis();
+        writeEloRow(winnerId, kit, rwNew, winnerOld.wins() + 1, winnerOld.losses(), now);
+        writeEloRow(loserId, kit, rlNew, loserOld.wins(), loserOld.losses() + 1, now);
+        RankedUpdate w = new RankedUpdate(winnerId, kit, rw, rwNew,
+            winnerOld.wins() + 1, winnerOld.losses());
+        RankedUpdate l = new RankedUpdate(loserId, kit, rl, rlNew,
+            loserOld.wins(), loserOld.losses() + 1);
+        return new RankedUpdate[]{w, l};
+    }
+
+    /** Read-or-create the elo row, returning the BEFORE-update snapshot. */
+    private EloEntry upsertEloRow(UUID uuid, String kit, int starting) throws SQLException {
+        try (PreparedStatement ps = db.connection().prepareStatement(
+            "SELECT elo, wins, losses, last_updated FROM duel_elo WHERE uuid = ? AND kit = ?")) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, kit);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new EloEntry(uuid, nameOf(uuid), kit,
+                        rs.getInt("elo"), rs.getInt("wins"), rs.getInt("losses"),
+                        rs.getLong("last_updated"));
+                }
+            }
+        }
+        try (PreparedStatement ps = db.connection().prepareStatement(
+            "INSERT INTO duel_elo (uuid, kit, elo, wins, losses, last_updated) VALUES (?, ?, ?, 0, 0, 0)")) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, kit);
+            ps.setInt(3, starting);
+            ps.executeUpdate();
+        }
+        return new EloEntry(uuid, nameOf(uuid), kit, starting, 0, 0, 0L);
+    }
+
+    private void writeEloRow(UUID uuid, String kit, int elo, int wins, int losses, long ts) throws SQLException {
+        try (PreparedStatement ps = db.connection().prepareStatement(
+            "UPDATE duel_elo SET elo = ?, wins = ?, losses = ?, last_updated = ? " +
+            "WHERE uuid = ? AND kit = ?")) {
+            ps.setInt(1, elo);
+            ps.setInt(2, wins);
+            ps.setInt(3, losses);
+            ps.setLong(4, ts);
+            ps.setString(5, uuid.toString());
+            ps.setString(6, kit);
+            ps.executeUpdate();
+        }
+    }
+
+    @Override
+    public int getElo(UUID uuid, String kit) {
+        int starting = readStartingElo();
+        try (PreparedStatement ps = db.connection().prepareStatement(
+            "SELECT elo FROM duel_elo WHERE uuid = ? AND kit = ?")) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, kit);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            warn("getElo", e);
+        }
+        return starting;
+    }
+
+    @Override
+    public @Nullable EloEntry getEloEntry(UUID uuid, String kit) {
+        try (PreparedStatement ps = db.connection().prepareStatement(
+            "SELECT elo, wins, losses, last_updated FROM duel_elo WHERE uuid = ? AND kit = ?")) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, kit);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new EloEntry(uuid, nameOf(uuid), kit,
+                        rs.getInt("elo"), rs.getInt("wins"), rs.getInt("losses"),
+                        rs.getLong("last_updated"));
+                }
+            }
+        } catch (SQLException e) {
+            warn("getEloEntry", e);
+        }
+        return null;
+    }
+
+    @Override
+    public List<EloEntry> topElo(String kit, int limit) {
+        List<EloEntry> out = new ArrayList<>();
+        String sql = "SELECT uuid, elo, wins, losses, last_updated FROM duel_elo " +
+                     "WHERE kit = ? ORDER BY elo DESC, wins DESC LIMIT ?";
+        try (PreparedStatement ps = db.connection().prepareStatement(sql)) {
+            ps.setString(1, kit);
+            ps.setInt(2, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    UUID id = UUID.fromString(rs.getString("uuid"));
+                    out.add(new EloEntry(id, nameOf(id), kit,
+                        rs.getInt("elo"), rs.getInt("wins"), rs.getInt("losses"),
+                        rs.getLong("last_updated")));
+                }
+            }
+        } catch (SQLException e) {
+            warn("topElo", e);
+        }
+        return out;
+    }
+
+    private int readK() {
+        int k = plugin.getConfig().getInt("elo.k-factor", 32);
+        // Allow the duels plugin's config to win if it exposes the value.
+        var duels = Bukkit.getPluginManager().getPlugin("PvPTLDuels");
+        if (duels != null) k = duels.getConfig().getInt("duels.elo-k-factor", k);
+        return k;
+    }
+
+    private int readStartingElo() {
+        int s = plugin.getConfig().getInt("elo.starting", 1000);
+        var duels = Bukkit.getPluginManager().getPlugin("PvPTLDuels");
+        if (duels != null) s = duels.getConfig().getInt("duels.elo-starting", s);
+        return s;
     }
 
     @Override

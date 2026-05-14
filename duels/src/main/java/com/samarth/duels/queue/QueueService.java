@@ -25,23 +25,36 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.Nullable;
 
+/**
+ * Queue manager — owns two parallel sets of per-kit queues:
+ *
+ *   unrankedByKit  — first-to-{@code default-first-to}, no Elo
+ *   rankedByKit    — first-to-{@code ranked-first-to}, Elo-tracked per kit
+ *
+ * Match selection is FIFO inside a single (kit, ranked) pair. The leave-queue
+ * barrier and post-match "Requeue" paper both carry a PDC flag indicating
+ * which queue the player came from so right-click re-enqueues into the same
+ * bucket.
+ */
 public final class QueueService {
     private static final MiniMessage MM = MiniMessage.miniMessage();
-    /** Hotbar slot the leave-queue barrier is placed in (slot 8 = far right). */
+    /** Hotbar slot used for both the leave-queue barrier and the requeue paper. */
     private static final int LEAVE_BARRIER_SLOT = 8;
 
     private final JavaPlugin plugin;
     private final DuelsConfig config;
     private final MatchRunner runner;
 
-    private final Map<String, Deque<UUID>> queuesByKit = new HashMap<>();
-    private final Map<UUID, String> kitByPlayer = new HashMap<>();
-    /** Original slot-8 contents we displaced when giving the leave-queue barrier. */
+    private final Map<String, Deque<UUID>> unrankedByKit = new HashMap<>();
+    private final Map<String, Deque<UUID>> rankedByKit = new HashMap<>();
+    /** Player → (kit, ranked). Tracks which queue a player is currently in. */
+    private final Map<UUID, QueueEntry> entryByPlayer = new HashMap<>();
+
     private final Map<UUID, ItemStack> savedHotbarSlot = new HashMap<>();
-    /** Original slot-8 contents we displaced when giving the requeue paper. */
     private final Map<UUID, ItemStack> savedRequeueSlot = new HashMap<>();
     private final NamespacedKey leaveQueueKey;
     private final NamespacedKey requeueKey;
+    private final NamespacedKey requeueRankedKey;
 
     public QueueService(JavaPlugin plugin, DuelsConfig config, MatchRunner runner) {
         this.plugin = plugin;
@@ -49,14 +62,21 @@ public final class QueueService {
         this.runner = runner;
         this.leaveQueueKey = new NamespacedKey(plugin, "leave_queue_item");
         this.requeueKey = new NamespacedKey(plugin, "requeue_kit");
+        this.requeueRankedKey = new NamespacedKey(plugin, "requeue_ranked");
     }
 
     public NamespacedKey leaveQueueKey() { return leaveQueueKey; }
     public NamespacedKey requeueKey() { return requeueKey; }
+    public NamespacedKey requeueRankedKey() { return requeueRankedKey; }
 
-    public void enqueue(Player p, String kitName) {
+    // ----- public enqueue API -----
+
+    public void enqueue(Player p, String kitName) { enqueue(p, kitName, false); }
+
+    /** Add the player to the (kit, ranked) queue. Auto-matches against the head of the same queue. */
+    public void enqueue(Player p, String kitName, boolean ranked) {
         if (kitName == null || kitName.isBlank()) {
-            send(p, "<red>You must specify a kit. Try /duels gui or /duels queue <kit>.</red>");
+            send(p, "<red>You must specify a kit.</red>");
             return;
         }
         KitService kits = KitsBridge.tryGet();
@@ -65,86 +85,98 @@ public final class QueueService {
             return;
         }
         if (kits.get(kitName) == null) {
-            send(p, "<red>Kit '" + kitName + "' doesn't exist. Use /kitlist to see available kits.</red>");
+            send(p, "<red>Kit '" + kitName + "' doesn't exist. Use /kitlist to see options.</red>");
             return;
         }
         if (runner.isInMatch(p.getUniqueId())) {
             send(p, "<red>You're already in a duel.</red>");
             return;
         }
-        // Already queued? Leave the old queue first.
-        if (kitByPlayer.containsKey(p.getUniqueId())) {
+        if (entryByPlayer.containsKey(p.getUniqueId())) {
             dequeue(p, false);
         }
-        Deque<UUID> q = queuesByKit.computeIfAbsent(kitName.toLowerCase(), k -> new ArrayDeque<>());
+        String key = kitName.toLowerCase();
+        Map<String, Deque<UUID>> bucket = ranked ? rankedByKit : unrankedByKit;
+        Deque<UUID> q = bucket.computeIfAbsent(key, k -> new ArrayDeque<>());
         q.addLast(p.getUniqueId());
-        kitByPlayer.put(p.getUniqueId(), kitName.toLowerCase());
+        entryByPlayer.put(p.getUniqueId(), new QueueEntry(key, ranked));
 
-        // If they had a lingering requeue paper from a previous duel, clean it up
-        // before we drop the leave-queue barrier in the same slot.
         removeRequeueItem(p);
         giveLeaveBarrier(p);
 
-        send(p, config.msg("queued")
-            .replace("<kit>", kitName)
-            .replace("<count>", String.valueOf(q.size())));
-        tryMatch(kitName.toLowerCase());
+        String tag = ranked ? "<gold>ranked</gold>" : "<gray>unranked</gray>";
+        send(p, "<green>Joined " + tag + " queue for kit <yellow>" + kitName
+            + "</yellow>. (" + q.size() + " waiting)</green>");
+        tryMatch(key, ranked);
     }
 
     public void dequeue(Player p, boolean notify) {
-        String kit = kitByPlayer.remove(p.getUniqueId());
+        QueueEntry entry = entryByPlayer.remove(p.getUniqueId());
         removeLeaveBarrier(p);
-        if (kit == null) {
+        if (entry == null) {
             if (notify) send(p, "<gray>You weren't in a queue.</gray>");
             return;
         }
-        Deque<UUID> q = queuesByKit.get(kit);
+        Map<String, Deque<UUID>> bucket = entry.ranked ? rankedByKit : unrankedByKit;
+        Deque<UUID> q = bucket.get(entry.kit);
         if (q != null) q.remove(p.getUniqueId());
         if (notify) send(p, "<yellow>Left the queue.</yellow>");
     }
 
-    public boolean isQueued(UUID id) { return kitByPlayer.containsKey(id); }
-    public @Nullable String queuedKit(UUID id) { return kitByPlayer.get(id); }
-    public int queueSize(String kit) {
-        Deque<UUID> q = queuesByKit.get(kit.toLowerCase());
-        return q == null ? 0 : q.size();
+    public boolean isQueued(UUID id) { return entryByPlayer.containsKey(id); }
+    public @Nullable String queuedKit(UUID id) {
+        QueueEntry e = entryByPlayer.get(id);
+        return e == null ? null : e.kit;
+    }
+    public boolean isQueuedRanked(UUID id) {
+        QueueEntry e = entryByPlayer.get(id);
+        return e != null && e.ranked;
     }
 
-    private void tryMatch(String kitName) {
-        Deque<UUID> q = queuesByKit.get(kitName);
+    public int queueSize(String kit, boolean ranked) {
+        Deque<UUID> q = (ranked ? rankedByKit : unrankedByKit).get(kit.toLowerCase());
+        return q == null ? 0 : q.size();
+    }
+    /** Back-compat: returns unranked size. */
+    public int queueSize(String kit) { return queueSize(kit, false); }
+
+    // ----- matchmaking -----
+
+    private void tryMatch(String kitName, boolean ranked) {
+        Map<String, Deque<UUID>> bucket = ranked ? rankedByKit : unrankedByKit;
+        Deque<UUID> q = bucket.get(kitName);
         if (q == null || q.size() < 2) return;
         UUID aId = q.pollFirst();
         UUID bId = q.pollFirst();
-        kitByPlayer.remove(aId);
-        kitByPlayer.remove(bId);
+        entryByPlayer.remove(aId);
+        entryByPlayer.remove(bId);
         Player a = Bukkit.getPlayer(aId);
         Player b = Bukkit.getPlayer(bId);
         if (a == null && b == null) return;
-        if (a == null) { reEnqueue(b, kitName); return; }
-        if (b == null) { reEnqueue(a, kitName); return; }
-        // Strip leave-queue items before saveAndPrepare snapshots the inventory.
+        if (a == null) { reEnqueue(b, kitName, ranked); return; }
+        if (b == null) { reEnqueue(a, kitName, ranked); return; }
         removeLeaveBarrier(a);
         removeLeaveBarrier(b);
-        // Queue uses default best-of; no time limit (default off, per design).
-        runner.start(a, b, kitName, config.defaultFirstTo(), false);
+        int firstTo = ranked ? config.rankedFirstTo() : config.defaultFirstTo();
+        runner.start(a, b, kitName, firstTo, false, ranked);
     }
 
-    private void reEnqueue(Player p, String kitName) {
-        Deque<UUID> q = queuesByKit.computeIfAbsent(kitName, k -> new ArrayDeque<>());
+    private void reEnqueue(Player p, String kitName, boolean ranked) {
+        Map<String, Deque<UUID>> bucket = ranked ? rankedByKit : unrankedByKit;
+        Deque<UUID> q = bucket.computeIfAbsent(kitName, k -> new ArrayDeque<>());
         q.addFirst(p.getUniqueId());
-        kitByPlayer.put(p.getUniqueId(), kitName);
+        entryByPlayer.put(p.getUniqueId(), new QueueEntry(kitName, ranked));
     }
 
-    // ----- leave-queue barrier (in hotbar) -----
+    // ----- leave-queue barrier -----
 
     private void giveLeaveBarrier(Player p) {
-        if (savedHotbarSlot.containsKey(p.getUniqueId())) return; // already present
+        if (savedHotbarSlot.containsKey(p.getUniqueId())) return;
         PlayerInventory inv = p.getInventory();
         ItemStack existing = inv.getItem(LEAVE_BARRIER_SLOT);
         if (existing != null && existing.getType() != Material.AIR) {
             savedHotbarSlot.put(p.getUniqueId(), existing.clone());
         } else {
-            // Use a marker so we know there was nothing there originally.
             savedHotbarSlot.put(p.getUniqueId(), new ItemStack(Material.AIR));
         }
         inv.setItem(LEAVE_BARRIER_SLOT, buildLeaveBarrier());
@@ -153,7 +185,6 @@ public final class QueueService {
     private void removeLeaveBarrier(Player p) {
         if (!savedHotbarSlot.containsKey(p.getUniqueId())) return;
         PlayerInventory inv = p.getInventory();
-        // Scan every slot for the tagged barrier and clear it (player may have moved it).
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack item = inv.getItem(i);
             if (item == null) continue;
@@ -164,23 +195,28 @@ public final class QueueService {
         }
         ItemStack saved = savedHotbarSlot.remove(p.getUniqueId());
         if (saved != null && saved.getType() != Material.AIR) {
-            // Try to restore to slot 8 if empty, otherwise add to inventory (overflow drops at feet).
             if (inv.getItem(LEAVE_BARRIER_SLOT) == null) {
                 inv.setItem(LEAVE_BARRIER_SLOT, saved);
             } else {
-                Map<Integer, ItemStack> overflow = inv.addItem(saved);
-                for (ItemStack drop : overflow.values()) {
+                for (ItemStack drop : inv.addItem(saved).values()) {
                     p.getWorld().dropItemNaturally(p.getLocation(), drop);
                 }
             }
         }
     }
 
-    // ----- requeue item (given at duel end) -----
+    // ----- requeue paper -----
 
-    /** Place a "Requeue: &lt;kit&gt;" paper in the player's hotbar. Right-click queues them again. */
     public void giveRequeueItem(Player p, String kitName) {
-        // If anything tagged is already in slot 8 (leave-queue or stale requeue), wipe it first.
+        giveRequeueItem(p, kitName, false);
+    }
+
+    /**
+     * Place a "Requeue: <kit>" paper in the player's slot 8. The PDC carries the
+     * kit name AND the ranked flag, so right-click re-enqueues into the same bucket
+     * the player just played from.
+     */
+    public void giveRequeueItem(Player p, String kitName, boolean ranked) {
         removeRequeueItem(p);
         PlayerInventory inv = p.getInventory();
         ItemStack existing = inv.getItem(LEAVE_BARRIER_SLOT);
@@ -189,12 +225,11 @@ public final class QueueService {
         } else {
             savedRequeueSlot.put(p.getUniqueId(), new ItemStack(Material.AIR));
         }
-        inv.setItem(LEAVE_BARRIER_SLOT, buildRequeueItem(kitName));
+        inv.setItem(LEAVE_BARRIER_SLOT, buildRequeueItem(kitName, ranked));
     }
 
     public void removeRequeueItem(Player p) {
         PlayerInventory inv = p.getInventory();
-        // Strip any tagged requeue items wherever the player may have moved them.
         for (int i = 0; i < inv.getSize(); i++) {
             ItemStack item = inv.getItem(i);
             if (item == null) continue;
@@ -208,27 +243,30 @@ public final class QueueService {
             if (inv.getItem(LEAVE_BARRIER_SLOT) == null) {
                 inv.setItem(LEAVE_BARRIER_SLOT, saved);
             } else {
-                Map<Integer, ItemStack> overflow = inv.addItem(saved);
-                for (ItemStack drop : overflow.values()) {
+                for (ItemStack drop : inv.addItem(saved).values()) {
                     p.getWorld().dropItemNaturally(p.getLocation(), drop);
                 }
             }
         }
     }
 
-    private ItemStack buildRequeueItem(String kitName) {
+    private ItemStack buildRequeueItem(String kitName, boolean ranked) {
         ItemStack it = new ItemStack(Material.PAPER);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            meta.displayName(Component.text("Requeue: " + kitName,
-                NamedTextColor.GREEN, TextDecoration.BOLD)
+            String label = ranked ? "Requeue: " + kitName + " §6(Ranked)" : "Requeue: " + kitName;
+            meta.displayName(Component.text(label,
+                ranked ? NamedTextColor.GOLD : NamedTextColor.GREEN, TextDecoration.BOLD)
                 .decoration(TextDecoration.ITALIC, false));
             meta.lore(java.util.Arrays.asList(
-                Component.text("Right-click to queue for " + kitName + " again",
-                    NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false),
+                Component.text("Right-click to queue for "
+                    + kitName + (ranked ? " (ranked)" : "") + " again", NamedTextColor.GRAY)
+                    .decoration(TextDecoration.ITALIC, false),
                 Component.text("Disappears when you start another duel",
                     NamedTextColor.DARK_GRAY).decoration(TextDecoration.ITALIC, false)));
-            meta.getPersistentDataContainer().set(requeueKey, PersistentDataType.STRING, kitName);
+            var pdc = meta.getPersistentDataContainer();
+            pdc.set(requeueKey, PersistentDataType.STRING, kitName);
+            pdc.set(requeueRankedKey, PersistentDataType.BYTE, (byte) (ranked ? 1 : 0));
             it.setItemMeta(meta);
         }
         return it;
@@ -252,4 +290,6 @@ public final class QueueService {
     private void send(Player p, String msg) {
         p.sendMessage(MM.deserialize(config.prefix()).append(MM.deserialize(msg)));
     }
+
+    private record QueueEntry(String kit, boolean ranked) {}
 }

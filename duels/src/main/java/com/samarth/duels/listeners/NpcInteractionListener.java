@@ -3,10 +3,12 @@ package com.samarth.duels.listeners;
 import com.samarth.duels.challenge.ChallengeService;
 import com.samarth.duels.config.DuelsConfig;
 import com.samarth.duels.kit.KitsBridge;
+import com.samarth.duels.lobby.LobbyItems;
 import com.samarth.duels.queue.QueueService;
 import com.samarth.duels.ui.DuelCustomizeHolder;
 import com.samarth.duels.ui.DuelSetupHolder;
 import com.samarth.duels.ui.QueueGui;
+import com.samarth.duels.ui.RankedQueueGui;
 import com.samarth.kits.KitService;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -40,12 +42,14 @@ public final class NpcInteractionListener implements Listener {
     private final QueueService queues;
     private final ChallengeService challenges;
     private final DuelsConfig config;
+    private final LobbyItems lobbyItems;
 
-    public NpcInteractionListener(QueueService queues,
-                                  ChallengeService challenges, DuelsConfig config) {
+    public NpcInteractionListener(QueueService queues, ChallengeService challenges,
+                                  DuelsConfig config, LobbyItems lobbyItems) {
         this.queues = queues;
         this.challenges = challenges;
         this.config = config;
+        this.lobbyItems = lobbyItems;
     }
 
     @EventHandler
@@ -87,9 +91,33 @@ public final class NpcInteractionListener implements Listener {
             && pdc.has(queues.requeueKey(), PersistentDataType.STRING)) {
             String kitName = pdc.get(queues.requeueKey(), PersistentDataType.STRING);
             if (kitName == null || kitName.isBlank()) return;
+            boolean ranked = pdc.has(queues.requeueRankedKey(), PersistentDataType.BYTE)
+                && pdc.get(queues.requeueRankedKey(), PersistentDataType.BYTE) == (byte) 1;
             e.setCancelled(true);
             queues.removeRequeueItem(e.getPlayer());
-            queues.enqueue(e.getPlayer(), kitName);
+            queues.enqueue(e.getPlayer(), kitName, ranked);
+            return;
+        }
+
+        // Lobby swords — diamond opens ranked queue picker, iron opens unranked.
+        if (item.getType() == Material.DIAMOND_SWORD && lobbyItems.isRankedSword(item)) {
+            e.setCancelled(true);
+            KitService kits = KitsBridge.tryGet();
+            if (kits == null) {
+                e.getPlayer().sendMessage("§cPvPTLKits not loaded — duels disabled.");
+                return;
+            }
+            RankedQueueGui.open(e.getPlayer(), kits, queues);
+            return;
+        }
+        if (item.getType() == Material.IRON_SWORD && lobbyItems.isUnrankedSword(item)) {
+            e.setCancelled(true);
+            KitService kits = KitsBridge.tryGet();
+            if (kits == null) {
+                e.getPlayer().sendMessage("§cPvPTLKits not loaded — duels disabled.");
+                return;
+            }
+            QueueGui.open(e.getPlayer(), kits, queues);
         }
     }
 
@@ -107,11 +135,19 @@ public final class NpcInteractionListener implements Listener {
             handleCustomizeClick(e, cust);
             return;
         }
-        // QueueGui uses title-based detection (no holder)
+        // QueueGui + RankedQueueGui use title-based detection (no holder).
         String title = PlainTextComponentSerializer.plainText().serialize(e.getView().title());
         if (QueueGui.TITLE.equals(title)) {
             e.setCancelled(true);
             handleQueueGuiClick(e);
+            return;
+        }
+        if (RankedQueueGui.TITLE.equals(title)) {
+            e.setCancelled(true);
+            if (e.getWhoClicked() instanceof Player viewer) {
+                KitService kits = KitsBridge.tryGet();
+                if (kits != null) RankedQueueGui.handleClick(e, viewer, kits, queues);
+            }
         }
     }
 

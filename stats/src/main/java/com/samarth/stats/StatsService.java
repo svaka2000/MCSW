@@ -1,11 +1,14 @@
 package com.samarth.stats;
 
 import com.samarth.stats.model.DuelResult;
+import com.samarth.stats.model.EloEntry;
 import com.samarth.stats.model.LeaderboardEntry;
 import com.samarth.stats.model.PlayerProfile;
+import com.samarth.stats.model.RankedUpdate;
 import com.samarth.stats.model.TournamentResult;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -49,6 +52,22 @@ public interface StatsService {
 
     /** Top players for a specific kit by wins on that kit. */
     List<LeaderboardEntry> topByKit(String kit, int limit);
+
+    /**
+     * Record a ranked duel — writes the duel row, applies the Elo formula to both
+     * players' rows for this kit, and fires {@code onComplete} with the resulting
+     * deltas on the main thread (callback may be null).
+     */
+    void recordRankedDuelResult(DuelResult result, @Nullable BiConsumer<RankedUpdate, RankedUpdate> onComplete);
+
+    /** Current Elo for this player on this kit, or the configured starting Elo if no row. */
+    int getElo(UUID uuid, String kit);
+
+    /** Full Elo entry for this player on this kit, or null if no row exists yet. */
+    @Nullable EloEntry getEloEntry(UUID uuid, String kit);
+
+    /** Top players by Elo on a specific kit, descending. */
+    List<EloEntry> topElo(String kit, int limit);
 
     /** Quick "is the backend healthy?" check. */
     boolean isReady();

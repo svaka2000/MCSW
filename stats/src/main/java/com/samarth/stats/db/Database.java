@@ -53,6 +53,11 @@ public final class Database {
                 s.execute("INSERT INTO schema_version (version) VALUES (1)");
                 logger.info("Migrated stats DB to v1");
             }
+            if (current < 2) {
+                applyV2(s);
+                s.execute("INSERT INTO schema_version (version) VALUES (2)");
+                logger.info("Migrated stats DB to v2 (ranked + Elo)");
+            }
         }
     }
 
@@ -92,5 +97,26 @@ public final class Database {
         s.execute("CREATE INDEX idx_duel_loser ON duel_results(loser_uuid)");
         s.execute("CREATE INDEX idx_duel_kit ON duel_results(kit)");
         s.execute("CREATE INDEX idx_tournament_player ON tournament_results(player_uuid)");
+    }
+
+    private void applyV2(Statement s) throws SQLException {
+        // Ranked flag on the existing duel_results table.
+        s.execute("ALTER TABLE duel_results ADD COLUMN ranked INTEGER NOT NULL DEFAULT 0");
+        s.execute("CREATE INDEX idx_duel_ranked ON duel_results(ranked)");
+
+        // Per-player, per-kit Elo + W/L breakdown.
+        s.execute(
+            "CREATE TABLE duel_elo (" +
+            "  uuid TEXT NOT NULL, " +
+            "  kit TEXT NOT NULL, " +
+            "  elo INTEGER NOT NULL DEFAULT 1000, " +
+            "  wins INTEGER NOT NULL DEFAULT 0, " +
+            "  losses INTEGER NOT NULL DEFAULT 0, " +
+            "  last_updated INTEGER NOT NULL DEFAULT 0, " +
+            "  PRIMARY KEY (uuid, kit)" +
+            ")"
+        );
+        s.execute("CREATE INDEX idx_duel_elo_kit ON duel_elo(kit)");
+        s.execute("CREATE INDEX idx_duel_elo_uuid ON duel_elo(uuid)");
     }
 }

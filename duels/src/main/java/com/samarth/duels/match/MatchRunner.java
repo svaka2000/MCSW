@@ -210,6 +210,12 @@ public final class MatchRunner {
     }
 
     private void saveAndPrepare(Player p, String kitName, Location spawn, DuelMatch m) {
+        // Strip any duel-managed UI items so they don't get baked into the inventory
+        // snapshot (leave-queue barrier, requeue paper, lobby pickers).
+        if (queues != null) {
+            queues.removeRequeueItem(p);
+        }
+        stripLobbyItems(p);
         PlayerInventory pi = p.getInventory();
         m.savedInventory().put(p.getUniqueId(), pi.getContents().clone());
         m.savedArmor().put(p.getUniqueId(), pi.getArmorContents().clone());
@@ -217,6 +223,16 @@ public final class MatchRunner {
         m.savedLocation().put(p.getUniqueId(), p.getLocation());
         m.savedGameMode().put(p.getUniqueId(), p.getGameMode());
         prepareFighter(p, kitName, spawn);
+    }
+
+    /**
+     * Strip the diamond/iron lobby swords (and any other PDC-tagged duels UI item)
+     * before snapshotting. Looked up via the plugin's LobbyItems instance.
+     */
+    private void stripLobbyItems(Player p) {
+        if (!(plugin instanceof com.samarth.duels.DuelsPlugin dp)) return;
+        com.samarth.duels.lobby.LobbyItems items = dp.lobbyItems();
+        if (items != null) items.remove(p);
     }
 
     private void prepareFighter(Player p, String kitName, Location spawn) {
@@ -476,12 +492,14 @@ public final class MatchRunner {
         refreshPlayerVisibility(allIds);
 
         // Give each finished player a "Requeue: <kit>" paper once they've settled.
+        // Ranked matches give a ranked-tagged paper so right-click re-enqueues into ranked.
         if (queues != null) {
             String kit = m.kitName();
+            boolean wasRanked = m.ranked();
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 for (UUID id : allIds) {
                     Player p = Bukkit.getPlayer(id);
-                    if (p != null && !isInMatch(id)) queues.giveRequeueItem(p, kit);
+                    if (p != null && !isInMatch(id)) queues.giveRequeueItem(p, kit, wasRanked);
                 }
             }, 20L);
         }
@@ -554,13 +572,34 @@ public final class MatchRunner {
         long durationSec = m.startMillisOrZero() == 0
             ? 0
             : Math.max(0, (System.currentTimeMillis() - m.startMillisOrZero()) / 1000L);
-        stats.recordDuelResult(new com.samarth.stats.model.DuelResult(
+        com.samarth.stats.model.DuelResult result = new com.samarth.stats.model.DuelResult(
             System.currentTimeMillis(),
             winnerId, loserId,
             m.kitName(),
             m.firstTo(),
             wRounds, lRounds,
-            durationSec));
+            durationSec,
+            m.ranked());
+        if (m.ranked()) {
+            stats.recordRankedDuelResult(result, (winnerUpdate, loserUpdate) -> {
+                Player wp = Bukkit.getPlayer(winnerUpdate.uuid());
+                Player lp = Bukkit.getPlayer(loserUpdate.uuid());
+                if (wp != null) send(wp, eloDeltaMsg(true, winnerUpdate));
+                if (lp != null) send(lp, eloDeltaMsg(false, loserUpdate));
+            });
+        } else {
+            stats.recordDuelResult(result);
+        }
+    }
+
+    private String eloDeltaMsg(boolean won, com.samarth.stats.model.RankedUpdate u) {
+        String sign = u.delta() >= 0 ? "+" : "";
+        if (won) {
+            return "<gold>Ranked win!</gold> <gray>Elo: <white>" + u.newElo()
+                + "</white> <green>(" + sign + u.delta() + ")</green></gray>";
+        }
+        return "<red>Ranked loss.</red> <gray>Elo: <white>" + u.newElo()
+            + "</white> <red>(" + sign + u.delta() + ")</red></gray>";
     }
 
     public void handleDisconnect(Player p) {

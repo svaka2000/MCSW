@@ -11,5 +11,13 @@ public record DuelResult(
     int bestOf,
     int winnerRounds,
     int loserRounds,
-    long durationSeconds
-) {}
+    long durationSeconds,
+    boolean ranked
+) {
+    /** Back-compat constructor — unranked by default. */
+    public DuelResult(long timestampMillis, UUID winnerUuid, UUID loserUuid, String kit,
+                      int bestOf, int winnerRounds, int loserRounds, long durationSeconds) {
+        this(timestampMillis, winnerUuid, loserUuid, kit, bestOf,
+            winnerRounds, loserRounds, durationSeconds, false);
+    }
+}
