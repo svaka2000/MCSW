@@ -45,7 +45,12 @@ public final class DuelsPlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new MatchListener(this, matches), this);
         getServer().getPluginManager().registerEvents(new NpcInteractionListener(queues, challenges, config, lobbyItems), this);
-        getServer().getPluginManager().registerEvents(new LobbyListener(this, config, matches, lobbyItems), this);
+        LobbyListener lobbyListener = new LobbyListener(this, config, matches, lobbyItems);
+        getServer().getPluginManager().registerEvents(lobbyListener, this);
+        // Hand the ranked/unranked swords to anyone already online — covers a
+        // server restart or /reload where players never relog (the #1 reason
+        // "the hotbar tools aren't there" after a deploy).
+        lobbyListener.giveToAllOnline();
 
         getLogger().info("Duels enabled. Run /duels info to check setup.");
         if (getServer().getPluginManager().getPlugin("PvPTLKits") == null) {

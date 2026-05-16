@@ -14,11 +14,14 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
- * Gives the diamond/iron sword lobby pickers whenever a player lands in the lobby:
+ * Gives the diamond/iron sword lobby pickers (ranked / unranked queue openers).
  *
- *   - PlayerJoinEvent — if a lobby is configured, teleport new players to it and give items
- *   - PlayerTeleportEvent — if the destination is at the lobby location, give items (post-match)
- *   - PlayerRespawnEvent — fallback for dead loser respawn path
+ *   - On join: give the items. If a lobby is configured, also teleport there.
+ *     The items DO NOT require a lobby — that was a bug: with no duels lobby set,
+ *     ranked was completely unreachable (no command fallback existed either).
+ *   - On enable / reload: hand items to everyone already online (covers a server
+ *     restart or /reload while players are connected).
+ *   - On teleport/respawn near the lobby: re-give (post-match return flow).
  *
  * MatchRunner strips these in {@code saveAndPrepare} before each duel, so they
  * don't get snapshotted into the player's pre-duel inventory.
@@ -44,16 +47,28 @@ public final class LobbyListener implements Listener {
     public void onJoin(PlayerJoinEvent e) {
         if (!config.lobbyItemsEnabled()) return;
         Player p = e.getPlayer();
-        Location lobby = config.lobby();
-        if (lobby == null) return;
-        // Teleport to lobby on join — and give items 1 tick later so the post-join
-        // inventory restore (other plugins) doesn't clobber them.
+        // Delay so the post-join inventory restore (other plugins) doesn't clobber the items.
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (!p.isOnline()) return;
             if (matches.isInMatch(p.getUniqueId())) return;
-            p.teleport(lobby);
-            lobbyItems.give(p);
+            Location lobby = config.lobby();
+            if (lobby != null) p.teleport(lobby);  // teleport only if a lobby exists
+            lobbyItems.give(p);                     // items ALWAYS — no lobby required
         }, 5L);
+    }
+
+    /**
+     * Hand the lobby items to every online, not-in-match player. Called from
+     * DuelsPlugin.onEnable so a server restart or /reload with players already
+     * connected still delivers the swords (they never relog otherwise).
+     */
+    public void giveToAllOnline() {
+        if (!config.lobbyItemsEnabled()) return;
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (!matches.isInMatch(p.getUniqueId())) lobbyItems.give(p);
+            }
+        }, 20L);
     }
 
     @EventHandler

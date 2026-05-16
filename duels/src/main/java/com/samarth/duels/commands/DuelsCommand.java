@@ -32,7 +32,8 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         switch (args[0].toLowerCase()) {
-            case "queue", "q" -> handleQueue(sender, args);
+            case "queue", "q", "unranked" -> handleQueue(sender, args, false);
+            case "ranked", "r" -> handleQueue(sender, args, true);
             case "leave" -> handleLeave(sender);
             case "accept" -> handleAccept(sender);
             case "deny", "decline" -> handleDeny(sender);
@@ -49,7 +50,7 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    private void handleQueue(CommandSender sender, String[] args) {
+    private void handleQueue(CommandSender sender, String[] args, boolean ranked) {
         if (!(sender instanceof Player p)) { sender.sendMessage("§cPlayers only."); return; }
         com.samarth.kits.KitService kits = com.samarth.duels.kit.KitsBridge.tryGet();
         if (kits == null) {
@@ -65,7 +66,7 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
             }
             kit = names.get(0);
         }
-        plugin.queues().enqueue(p, kit);
+        plugin.queues().enqueue(p, kit, ranked);
     }
 
     private void handleLeave(CommandSender sender) {
@@ -261,8 +262,12 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
 
     private void sendHelp(CommandSender sender) {
         sender.sendMessage("§6=== /duels ===");
-        sender.sendMessage("§e/duels queue [kit] §7— join the duel queue for a kit");
-        sender.sendMessage("§e/duels leave §7— leave queue or current duel");
+        sender.sendMessage("§e/duels ranked [kit] §7— join the §6RANKED§7 queue (first-to-3, Elo)");
+        sender.sendMessage("§e/duels unranked [kit] §7— join the casual queue");
+        sender.sendMessage("§7(or right-click the §bdiamond§7/§firon§7 sword in your hotbar)");
+        sender.sendMessage("§e/duels queue [kit] §7— alias for unranked");
+        sender.sendMessage("§e/elo top <kit> §7— ranked Elo leaderboard");
+        sender.sendMessage("§e/leave §7— forfeit your duel/tournament or leave queue");
         sender.sendMessage("§e/duels accept §7— accept a pending /duel challenge");
         sender.sendMessage("§e/duels deny §7— deny a pending /duel challenge");
         sender.sendMessage("§e/duels gui §7— open the kit/queue picker");
@@ -283,9 +288,10 @@ public final class DuelsCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
         if (args.length == 1) {
-            return Arrays.asList("queue", "leave", "accept", "deny", "gui", "info", "setlobby", "setarena", "tagentity", "untagentity", "reload", "help");
+            return Arrays.asList("ranked", "unranked", "queue", "leave", "accept", "deny", "gui", "info", "setlobby", "setarena", "tagentity", "untagentity", "reload", "help");
         }
-        if (args.length == 2 && args[0].equalsIgnoreCase("queue")) {
+        if (args.length == 2 && (args[0].equalsIgnoreCase("queue")
+                || args[0].equalsIgnoreCase("ranked") || args[0].equalsIgnoreCase("unranked"))) {
             com.samarth.kits.KitService kits = com.samarth.duels.kit.KitsBridge.tryGet();
             return kits == null ? Arrays.asList() : kits.names();
         }

@@ -9,7 +9,7 @@ softdepend: [PvPTLStats, PvPTLKits, PvPTLParties, Tourney]
 commands:
   duels:
     description: Main duels command
-    usage: /duels <queue|leave|accept|deny|gui|info|setlobby|setarena|tagentity|untagentity|help>
+    usage: /duels <ranked|unranked|queue|leave|accept|deny|gui|info|setlobby|setarena|tagentity|untagentity|help>
   duel:
     description: Challenge a player to a duel
     usage: /duel <player> [kit]
